@@ -11,6 +11,7 @@ import { PurchasesModule } from './purchases/purchases.module';
 import { PatientsModule } from './patients/patients.module';
 import { SalesModule } from './sales/sales.module';
 import { PaymentsModule } from './payments/payments.module';
+import { UsersModule } from './users/users.module';
 
 
 @Module({
@@ -27,6 +28,7 @@ import { PaymentsModule } from './payments/payments.module';
     PatientsModule,
     SalesModule,
     PaymentsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
