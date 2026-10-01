@@ -6,6 +6,10 @@ import { DatabaseModule } from './database/database.module';
 import { MedicinesModule } from './medicines/medicines.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
+import { PurchasesModule } from './purchases/purchases.module';
+import { PatientsModule } from './patients/patients.module';
+
 
 @Module({
   imports: [
@@ -16,6 +20,9 @@ import { InventoryModule } from './inventory/inventory.module';
     MedicinesModule,
     CategoriesModule,
     InventoryModule,
+    SuppliersModule,
+    PurchasesModule,
+    PatientsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
