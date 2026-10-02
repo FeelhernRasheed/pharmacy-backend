@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { DatabaseService } from '../database/database.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
 import { CreateMedicineDto } from './dto/create-medicine.dto';
 import { UpdateMedicineDto } from './dto/update-medicine.dto';
 
@@ -7,6 +13,7 @@ import { UpdateMedicineDto } from './dto/update-medicine.dto';
 export class MedicinesService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getMedicines() {
@@ -54,47 +61,99 @@ export class MedicinesService {
     return result.rows[0];
   }
 
-  async createMedicine(createMedicineDto: CreateMedicineDto) {
-    const { name, strength, category_id } = createMedicineDto;
+  async createMedicine(
+    createMedicineDto: CreateMedicineDto,
+    actorUserId: number,
+  ) {
+    const {
+      name,
+      strength,
+      category_id,
+    } = createMedicineDto;
 
     const result = await this.databaseService
       .getPool()
       .query(
-        `INSERT INTO medicines (name, strength, category_id)
+        `INSERT INTO medicines
+         (
+           name,
+           strength,
+           category_id
+         )
          VALUES ($1, $2, $3)
          RETURNING *`,
-        [name, strength, category_id],
+        [
+          name,
+          strength,
+          category_id,
+        ],
       );
 
-    return result.rows[0];
+    const createdMedicine = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'CREATE',
+      'MEDICINES',
+      createdMedicine.id,
+      `Created medicine: ${createdMedicine.name}`,
+    );
+
+    return createdMedicine;
   }
 
   async updateMedicine(
     id: number,
     updateMedicineDto: UpdateMedicineDto,
+    actorUserId: number,
   ) {
-    const { name, strength, category_id } = updateMedicineDto;
+    const {
+      name,
+      strength,
+      category_id,
+    } = updateMedicineDto;
 
     const result = await this.databaseService
       .getPool()
       .query(
         `UPDATE medicines
-         SET name = $1,
-             strength = $2,
-             category_id = $3
+         SET
+           name = $1,
+           strength = $2,
+           category_id = $3
          WHERE id = $4
          RETURNING *`,
-        [name, strength, category_id, id],
+        [
+          name,
+          strength,
+          category_id,
+          id,
+        ],
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException('Medicine not found');
+      throw new NotFoundException(
+        'Medicine not found',
+      );
     }
 
-    return result.rows[0];
+    const updatedMedicine = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'UPDATE',
+      'MEDICINES',
+      updatedMedicine.id,
+      `Updated medicine: ${updatedMedicine.name}`,
+    );
+
+    return updatedMedicine;
   }
 
-  async deleteMedicine(id: number) {
+  async deleteMedicine(
+    id: number,
+    actorUserId: number,
+  ) {
     const result = await this.databaseService
       .getPool()
       .query(
@@ -103,12 +162,24 @@ export class MedicinesService {
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException('Medicine not found');
+      throw new NotFoundException(
+        'Medicine not found',
+      );
     }
+
+    const deletedMedicine = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'DELETE',
+      'MEDICINES',
+      deletedMedicine.id,
+      `Deleted medicine: ${deletedMedicine.name}`,
+    );
 
     return {
       message: 'Medicine deleted successfully',
-      medicine: result.rows[0],
+      medicine: deletedMedicine,
     };
   }
 }

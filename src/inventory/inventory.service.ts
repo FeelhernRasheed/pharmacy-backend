@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { DatabaseService } from '../database/database.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { UpdateBatchDto } from './dto/update-batch.dto';
 
@@ -7,6 +13,7 @@ import { UpdateBatchDto } from './dto/update-batch.dto';
 export class InventoryService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getBatches() {
@@ -62,7 +69,10 @@ export class InventoryService {
     return result.rows[0];
   }
 
-  async createBatch(createBatchDto: CreateBatchDto) {
+  async createBatch(
+    createBatchDto: CreateBatchDto,
+    actorUserId: number,
+  ) {
     const {
       medicine_id,
       batch_number,
@@ -80,7 +90,9 @@ export class InventoryService {
       );
 
     if (medicine.rows.length === 0) {
-      throw new NotFoundException('Medicine not found');
+      throw new NotFoundException(
+        'Medicine not found',
+      );
     }
 
     const result = await this.databaseService
@@ -107,12 +119,23 @@ export class InventoryService {
         ],
       );
 
-    return result.rows[0];
+    const createdBatch = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'CREATE',
+      'INVENTORY',
+      createdBatch.id,
+      `Created inventory batch: ${createdBatch.batch_number}`,
+    );
+
+    return createdBatch;
   }
 
   async updateBatch(
     id: number,
     updateBatchDto: UpdateBatchDto,
+    actorUserId: number,
   ) {
     const {
       batch_number,
@@ -144,13 +167,28 @@ export class InventoryService {
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException('Batch not found');
+      throw new NotFoundException(
+        'Batch not found',
+      );
     }
 
-    return result.rows[0];
+    const updatedBatch = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'UPDATE',
+      'INVENTORY',
+      updatedBatch.id,
+      `Updated inventory batch: ${updatedBatch.batch_number}`,
+    );
+
+    return updatedBatch;
   }
 
-  async deleteBatch(id: number) {
+  async deleteBatch(
+    id: number,
+    actorUserId: number,
+  ) {
     const result = await this.databaseService
       .getPool()
       .query(
@@ -159,12 +197,24 @@ export class InventoryService {
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException('Batch not found');
+      throw new NotFoundException(
+        'Batch not found',
+      );
     }
+
+    const deletedBatch = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'DELETE',
+      'INVENTORY',
+      deletedBatch.id,
+      `Deleted inventory batch: ${deletedBatch.batch_number}`,
+    );
 
     return {
       message: 'Batch deleted successfully',
-      batch: result.rows[0],
+      batch: deletedBatch,
     };
   }
 }
