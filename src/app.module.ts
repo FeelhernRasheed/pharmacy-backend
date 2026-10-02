@@ -14,6 +14,9 @@ import { PaymentsModule } from './payments/payments.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { PrescriptionsModule } from './prescriptions/prescriptions.module';
+import { DispensingModule } from './dispensing/dispensing.module';
+import { StockAdjustmentsModule } from './stock-adjustments/stock-adjustments.module';
+import { ExpiryManagementModule } from './expiry-management/expiry-management.module';
 
 
 @Module({
@@ -33,6 +36,9 @@ import { PrescriptionsModule } from './prescriptions/prescriptions.module';
     UsersModule,
     AuthModule,
     PrescriptionsModule,
+    DispensingModule,
+    StockAdjustmentsModule,
+    ExpiryManagementModule,
   ],
   controllers: [AppController],
   providers: [AppService],
