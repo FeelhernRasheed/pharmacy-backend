@@ -6,13 +6,17 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
+@UseGuards(JwtAuthGuard)
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
@@ -32,13 +36,6 @@ export class PaymentsController {
     );
   }
 
-  @Get(':id')
-  getPaymentById(
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.paymentsService.getPaymentById(id);
-  }
-
   @Get('sale/:saleId')
   getPaymentsBySaleId(
     @Param('saleId', ParseIntPipe) saleId: number,
@@ -48,12 +45,21 @@ export class PaymentsController {
     );
   }
 
+  @Get(':id')
+  getPaymentById(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.paymentsService.getPaymentById(id);
+  }
+
   @Post()
   createPayment(
     @Body() createPaymentDto: CreatePaymentDto,
+    @Req() req: any,
   ) {
     return this.paymentsService.createPayment(
       createPaymentDto,
+      req.user.userId,
     );
   }
 }

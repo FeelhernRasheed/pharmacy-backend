@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
 
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -12,6 +13,7 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 export class PaymentsService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getPayments() {
@@ -51,9 +53,7 @@ export class PaymentsService {
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Payment not found',
-      );
+      throw new NotFoundException('Payment not found');
     }
 
     return result.rows[0];
@@ -82,6 +82,7 @@ export class PaymentsService {
 
   async createPayment(
     createPaymentDto: CreatePaymentDto,
+    actorUserId?: number,
   ) {
     const {
       sale_id,
@@ -101,9 +102,7 @@ export class PaymentsService {
     );
 
     if (sale.rows.length === 0) {
-      throw new NotFoundException(
-        'Sale not found',
-      );
+      throw new NotFoundException('Sale not found');
     }
 
     const totalAmount = Number(
@@ -148,7 +147,19 @@ export class PaymentsService {
       ],
     );
 
-    return result.rows[0];
+    const createdPayment = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'PAYMENTS',
+        createdPayment.id,
+        `Created payment: ${createdPayment.id} for sale: ${sale_id}`,
+      );
+    }
+
+    return createdPayment;
   }
 
   async getPaymentsByStatus(status: string) {
