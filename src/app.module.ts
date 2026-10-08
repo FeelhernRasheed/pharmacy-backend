@@ -17,6 +17,8 @@ import { PrescriptionsModule } from './prescriptions/prescriptions.module';
 import { DispensingModule } from './dispensing/dispensing.module';
 import { StockAdjustmentsModule } from './stock-adjustments/stock-adjustments.module';
 import { ExpiryManagementModule } from './expiry-management/expiry-management.module';
+import { LowStockModule } from './low-stock/low-stock.module';
+import { AuditLogsModule } from './audit-logs/audit-logs.module';
 
 
 @Module({
@@ -39,6 +41,8 @@ import { ExpiryManagementModule } from './expiry-management/expiry-management.mo
     DispensingModule,
     StockAdjustmentsModule,
     ExpiryManagementModule,
+    LowStockModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

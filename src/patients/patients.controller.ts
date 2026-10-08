@@ -7,12 +7,18 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { PatientsService } from './patients.service';
 
 @Controller('patients')
+@UseGuards(JwtAuthGuard)
 export class PatientsController {
   constructor(
     private readonly patientsService: PatientsService,
@@ -33,9 +39,11 @@ export class PatientsController {
   @Post()
   createPatient(
     @Body() createPatientDto: CreatePatientDto,
+    @Req() req: any,
   ) {
     return this.patientsService.createPatient(
       createPatientDto,
+      req.user.userId,
     );
   }
 
@@ -43,17 +51,23 @@ export class PatientsController {
   updatePatient(
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePatientDto: UpdatePatientDto,
+    @Req() req: any,
   ) {
     return this.patientsService.updatePatient(
       id,
       updatePatientDto,
+      req.user.userId,
     );
   }
 
   @Delete(':id')
   deletePatient(
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
   ) {
-    return this.patientsService.deletePatient(id);
+    return this.patientsService.deletePatient(
+      id,
+      req.user.userId,
+    );
   }
 }

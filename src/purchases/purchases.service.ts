@@ -2,7 +2,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
+
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 
@@ -10,6 +13,7 @@ import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 export class PurchasesService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getPurchases() {
@@ -63,6 +67,7 @@ export class PurchasesService {
 
   async createPurchase(
     createPurchaseDto: CreatePurchaseDto,
+    actorUserId?: number,
   ) {
     const {
       supplier_id,
@@ -96,12 +101,25 @@ export class PurchasesService {
         ],
       );
 
-    return result.rows[0];
+    const createdPurchase = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'PURCHASES',
+        createdPurchase.id,
+        `Created purchase: ${createdPurchase.invoice_number ?? createdPurchase.id}`,
+      );
+    }
+
+    return createdPurchase;
   }
 
   async updatePurchase(
     id: number,
     updatePurchaseDto: UpdatePurchaseDto,
+    actorUserId?: number,
   ) {
     const {
       invoice_number,
@@ -127,10 +145,25 @@ export class PurchasesService {
       throw new NotFoundException('Purchase not found');
     }
 
-    return result.rows[0];
+    const updatedPurchase = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'UPDATE',
+        'PURCHASES',
+        updatedPurchase.id,
+        `Updated purchase: ${updatedPurchase.invoice_number ?? updatedPurchase.id}`,
+      );
+    }
+
+    return updatedPurchase;
   }
 
-  async deletePurchase(id: number) {
+  async deletePurchase(
+    id: number,
+    actorUserId?: number,
+  ) {
     const result = await this.databaseService
       .getPool()
       .query(
@@ -144,9 +177,21 @@ export class PurchasesService {
       throw new NotFoundException('Purchase not found');
     }
 
+    const deletedPurchase = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'DELETE',
+        'PURCHASES',
+        deletedPurchase.id,
+        `Deleted purchase: ${deletedPurchase.invoice_number ?? deletedPurchase.id}`,
+      );
+    }
+
     return {
       message: 'Purchase deleted successfully',
-      purchase: result.rows[0],
+      purchase: deletedPurchase,
     };
   }
 }

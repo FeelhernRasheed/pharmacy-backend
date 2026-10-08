@@ -7,12 +7,18 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { PurchasesService } from './purchases.service';
 
 @Controller('purchases')
+@UseGuards(JwtAuthGuard)
 export class PurchasesController {
   constructor(
     private readonly purchasesService: PurchasesService,
@@ -33,9 +39,11 @@ export class PurchasesController {
   @Post()
   createPurchase(
     @Body() createPurchaseDto: CreatePurchaseDto,
+    @Req() req: any,
   ) {
     return this.purchasesService.createPurchase(
       createPurchaseDto,
+      req.user.userId,
     );
   }
 
@@ -43,17 +51,23 @@ export class PurchasesController {
   updatePurchase(
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePurchaseDto: UpdatePurchaseDto,
+    @Req() req: any,
   ) {
     return this.purchasesService.updatePurchase(
       id,
       updatePurchaseDto,
+      req.user.userId,
     );
   }
 
   @Delete(':id')
   deletePurchase(
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
   ) {
-    return this.purchasesService.deletePurchase(id);
+    return this.purchasesService.deletePurchase(
+      id,
+      req.user.userId,
+    );
   }
 }

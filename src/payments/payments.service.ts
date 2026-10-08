@@ -3,7 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import { DatabaseService } from '../database/database.service';
+
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
@@ -49,7 +51,9 @@ export class PaymentsService {
       );
 
     if (result.rows.length === 0) {
-      throw new NotFoundException('Payment not found');
+      throw new NotFoundException(
+        'Payment not found',
+      );
     }
 
     return result.rows[0];
@@ -97,7 +101,9 @@ export class PaymentsService {
     );
 
     if (sale.rows.length === 0) {
-      throw new NotFoundException('Sale not found');
+      throw new NotFoundException(
+        'Sale not found',
+      );
     }
 
     const totalAmount = Number(
@@ -143,5 +149,26 @@ export class PaymentsService {
     );
 
     return result.rows[0];
+  }
+
+  async getPaymentsByStatus(status: string) {
+    const result = await this.databaseService
+      .getPool()
+      .query(
+        `SELECT
+           p.id,
+           p.sale_id,
+           p.amount,
+           p.payment_method,
+           p.payment_date,
+           p.status,
+           p.created_at
+         FROM payments p
+         WHERE p.status = $1
+         ORDER BY p.id ASC`,
+        [status],
+      );
+
+    return result.rows;
   }
 }

@@ -2,13 +2,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
+
 import { CreatePurchaseItemDto } from './dto/create-purchase-item.dto';
 
 @Injectable()
 export class PurchaseItemsService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getPurchaseItems(purchaseId: number) {
@@ -40,6 +44,7 @@ export class PurchaseItemsService {
 
   async createPurchaseItem(
     createPurchaseItemDto: CreatePurchaseItemDto,
+    actorUserId?: number,
   ) {
     const {
       purchase_id,
@@ -52,7 +57,6 @@ export class PurchaseItemsService {
     } = createPurchaseItemDto;
 
     const pool = this.databaseService.getPool();
-
     const client = await pool.connect();
 
     try {
@@ -143,6 +147,16 @@ export class PurchaseItemsService {
       );
 
       await client.query('COMMIT');
+
+      if (actorUserId) {
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'PURCHASE_ITEMS',
+          result.rows[0].id,
+          `Created purchase item for batch ${batch_number}`,
+        );
+      }
 
       return result.rows[0];
     } catch (error) {

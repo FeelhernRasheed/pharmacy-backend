@@ -6,19 +6,20 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
@@ -36,25 +37,29 @@ export class UsersController {
     return this.usersService.getUserById(id);
   }
 
-  @Roles('ADMIN')
   @Post()
+  @Roles('ADMIN')
   createUser(
     @Body() createUserDto: CreateUserDto,
+    @Request() request: any,
   ) {
     return this.usersService.createUser(
       createUserDto,
+      request.user.userId,
     );
   }
 
-  @Roles('ADMIN')
   @Put(':id')
+  @Roles('ADMIN')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
+    @Request() request: any,
   ) {
     return this.usersService.updateUser(
       id,
       updateUserDto,
+      request.user.userId,
     );
   }
 }

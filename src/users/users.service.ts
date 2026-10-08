@@ -7,6 +7,7 @@ import {
 import * as bcrypt from 'bcrypt';
 
 import { DatabaseService } from '../database/database.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -15,6 +16,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 export class UsersService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getUsers() {
@@ -60,7 +62,10 @@ export class UsersService {
     return result.rows[0];
   }
 
-  async createUser(createUserDto: CreateUserDto) {
+  async createUser(
+    createUserDto: CreateUserDto,
+    actorUserId: number,
+  ) {
     const {
       full_name,
       username,
@@ -115,12 +120,23 @@ export class UsersService {
         ],
       );
 
-    return result.rows[0];
+    const createdUser = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'CREATE',
+      'USERS',
+      createdUser.id,
+      `Created user account: ${createdUser.username}`,
+    );
+
+    return createdUser;
   }
 
   async updateUser(
     id: number,
     updateUserDto: UpdateUserDto,
+    actorUserId: number,
   ) {
     const existingUser = await this.databaseService
       .getPool()
@@ -144,15 +160,16 @@ export class UsersService {
     } = updateUserDto;
 
     if (username) {
-      const usernameCheck = await this.databaseService
-        .getPool()
-        .query(
-          `SELECT id
-           FROM users
-           WHERE username = $1
-           AND id <> $2`,
-          [username, id],
-        );
+      const usernameCheck =
+        await this.databaseService
+          .getPool()
+          .query(
+            `SELECT id
+             FROM users
+             WHERE username = $1
+             AND id <> $2`,
+            [username, id],
+          );
 
       if (usernameCheck.rows.length > 0) {
         throw new ConflictException(
@@ -200,6 +217,16 @@ export class UsersService {
         ],
       );
 
-    return result.rows[0];
+    const updatedUser = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'UPDATE',
+      'USERS',
+      updatedUser.id,
+      `Updated user account: ${updatedUser.username}`,
+    );
+
+    return updatedUser;
   }
 }

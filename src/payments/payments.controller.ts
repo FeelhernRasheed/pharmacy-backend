@@ -5,8 +5,11 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
 } from '@nestjs/common';
+
 import { CreatePaymentDto } from './dto/create-payment.dto';
+
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
@@ -18,6 +21,15 @@ export class PaymentsController {
   @Get()
   getPayments() {
     return this.paymentsService.getPayments();
+  }
+
+  @Get('status')
+  getPaymentsByStatus(
+    @Query('status') status: string,
+  ) {
+    return this.paymentsService.getPaymentsByStatus(
+      status,
+    );
   }
 
   @Get(':id')

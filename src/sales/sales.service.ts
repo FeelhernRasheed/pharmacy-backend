@@ -2,13 +2,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
+
 import { CreateSaleDto } from './dto/create-sale.dto';
 
 @Injectable()
 export class SalesService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getSales() {
@@ -58,10 +62,13 @@ export class SalesService {
     return result.rows[0];
   }
 
-  async createSale(createSaleDto: CreateSaleDto) {
+  async createSale(
+    createSaleDto: CreateSaleDto,
+    actorUserId?: number,
+  ) {
     const { patient_id } = createSaleDto;
 
-    if (patient_id !== undefined) {
+    if (patient_id) {
       const patient = await this.databaseService
         .getPool()
         .query(
@@ -83,9 +90,95 @@ export class SalesService {
          )
          VALUES ($1)
          RETURNING *`,
-        [patient_id ?? null],
+        [
+          patient_id ?? null,
+        ],
       );
 
-    return result.rows[0];
+    const createdSale = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'SALES',
+        createdSale.id,
+        `Created sale: ${createdSale.id}`,
+      );
+    }
+
+    return createdSale;
+  }
+
+  async updateSale(
+    id: number,
+    status?: string,
+    actorUserId?: number,
+  ) {
+    const result = await this.databaseService
+      .getPool()
+      .query(
+        `UPDATE sales
+         SET status = COALESCE($1, status)
+         WHERE id = $2
+         RETURNING *`,
+        [
+          status ?? null,
+          id,
+        ],
+      );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundException('Sale not found');
+    }
+
+    const updatedSale = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'UPDATE',
+        'SALES',
+        updatedSale.id,
+        `Updated sale: ${updatedSale.id}`,
+      );
+    }
+
+    return updatedSale;
+  }
+
+  async deleteSale(
+    id: number,
+    actorUserId?: number,
+  ) {
+    const result = await this.databaseService
+      .getPool()
+      .query(
+        `DELETE FROM sales
+         WHERE id = $1
+         RETURNING *`,
+        [id],
+      );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundException('Sale not found');
+    }
+
+    const deletedSale = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'DELETE',
+        'SALES',
+        deletedSale.id,
+        `Deleted sale: ${deletedSale.id}`,
+      );
+    }
+
+    return {
+      message: 'Sale deleted successfully',
+      sale: deletedSale,
+    };
   }
 }

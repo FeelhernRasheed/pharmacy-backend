@@ -2,7 +2,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
+
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 
@@ -10,13 +13,24 @@ import { UpdatePatientDto } from './dto/update-patient.dto';
 export class PatientsService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getPatients() {
     const result = await this.databaseService
       .getPool()
       .query(
-        `SELECT *
+        `SELECT
+           id,
+           full_name,
+           phone,
+           email,
+           date_of_birth,
+           gender,
+           address,
+           status,
+           created_at,
+           updated_at
          FROM patients
          ORDER BY id ASC`,
       );
@@ -28,7 +42,17 @@ export class PatientsService {
     const result = await this.databaseService
       .getPool()
       .query(
-        `SELECT *
+        `SELECT
+           id,
+           full_name,
+           phone,
+           email,
+           date_of_birth,
+           gender,
+           address,
+           status,
+           created_at,
+           updated_at
          FROM patients
          WHERE id = $1`,
         [id],
@@ -43,6 +67,7 @@ export class PatientsService {
 
   async createPatient(
     createPatientDto: CreatePatientDto,
+    actorUserId?: number,
   ) {
     const {
       full_name,
@@ -77,12 +102,25 @@ export class PatientsService {
         ],
       );
 
-    return result.rows[0];
+    const createdPatient = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'PATIENTS',
+        createdPatient.id,
+        `Created patient: ${createdPatient.full_name}`,
+      );
+    }
+
+    return createdPatient;
   }
 
   async updatePatient(
     id: number,
     updatePatientDto: UpdatePatientDto,
+    actorUserId?: number,
   ) {
     const {
       full_name,
@@ -124,10 +162,25 @@ export class PatientsService {
       throw new NotFoundException('Patient not found');
     }
 
-    return result.rows[0];
+    const updatedPatient = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'UPDATE',
+        'PATIENTS',
+        updatedPatient.id,
+        `Updated patient: ${updatedPatient.full_name}`,
+      );
+    }
+
+    return updatedPatient;
   }
 
-  async deletePatient(id: number) {
+  async deletePatient(
+    id: number,
+    actorUserId?: number,
+  ) {
     const result = await this.databaseService
       .getPool()
       .query(
@@ -141,9 +194,21 @@ export class PatientsService {
       throw new NotFoundException('Patient not found');
     }
 
+    const deletedPatient = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'DELETE',
+        'PATIENTS',
+        deletedPatient.id,
+        `Deleted patient: ${deletedPatient.full_name}`,
+      );
+    }
+
     return {
       message: 'Patient deleted successfully',
-      patient: result.rows[0],
+      patient: deletedPatient,
     };
   }
 }
