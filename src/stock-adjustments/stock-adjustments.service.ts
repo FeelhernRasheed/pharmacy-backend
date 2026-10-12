@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
 
 import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
@@ -12,6 +13,7 @@ import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
 export class StockAdjustmentsService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getStockAdjustments() {
@@ -85,25 +87,28 @@ export class StockAdjustmentsService {
 
   async createStockAdjustment(
     createStockAdjustmentDto: CreateStockAdjustmentDto,
+    actorUserId?: number,
   ) {
     const {
       batch_id,
       adjustment_type,
       quantity,
       reason,
-      adjusted_by,
     } = createStockAdjustmentDto;
 
-    const pool = this.databaseService.getPool();
+    if (!actorUserId) {
+      throw new NotFoundException(
+        'Authenticated user not found',
+      );
+    }
 
+    const pool = this.databaseService.getPool();
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
-      /*
-       * 1. Lock the batch row.
-       */
+      // 1. Lock the batch row.
       const batchResult = await client.query(
         `SELECT
            id,
@@ -125,9 +130,7 @@ export class StockAdjustmentsService {
 
       const batch = batchResult.rows[0];
 
-      /*
-       * 2. Check the user exists.
-       */
+      // 2. Check the authenticated user exists.
       const userResult = await client.query(
         `SELECT
            id,
@@ -136,7 +139,7 @@ export class StockAdjustmentsService {
            status
          FROM users
          WHERE id = $1`,
-        [adjusted_by],
+        [actorUserId],
       );
 
       if (userResult.rows.length === 0) {
@@ -147,27 +150,21 @@ export class StockAdjustmentsService {
 
       const user = userResult.rows[0];
 
-      /*
-       * 3. Only active users can make adjustments.
-       */
+      // 3. Only active users can make adjustments.
       if (user.status !== 'ACTIVE') {
         throw new BadRequestException(
           'Adjustment user account is not active',
         );
       }
 
-      /*
-       * 4. Prevent removing more stock than exists.
-       */
+      // 4. Prevent removing more stock than exists.
       if (quantity > batch.quantity) {
         throw new BadRequestException(
           `Adjustment quantity exceeds available stock. Available quantity: ${batch.quantity}`,
         );
       }
 
-      /*
-       * 5. Reduce the batch quantity.
-       */
+      // 5. Reduce the batch quantity.
       const updatedBatchResult =
         await client.query(
           `UPDATE medicine_batches
@@ -182,9 +179,7 @@ export class StockAdjustmentsService {
           [quantity, batch_id],
         );
 
-      /*
-       * 6. Record the adjustment.
-       */
+      // 6. Record the adjustment.
       const adjustmentResult =
         await client.query(
           `INSERT INTO stock_adjustments
@@ -210,27 +205,32 @@ export class StockAdjustmentsService {
             adjustment_type,
             quantity,
             reason,
-            adjusted_by,
+            actorUserId,
           ],
         );
 
-      /*
-       * 7. Commit both operations together.
-       */
+      // 7. Commit the stock change and adjustment together.
       await client.query('COMMIT');
 
+      const createdAdjustment =
+        adjustmentResult.rows[0];
+
+      // 8. Create audit log after successful transaction.
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'STOCK_ADJUSTMENTS',
+        createdAdjustment.id,
+        `Created stock adjustment: ${createdAdjustment.id} for batch: ${batch_id}`,
+      );
+
       return {
-        ...adjustmentResult.rows[0],
+        ...createdAdjustment,
         remaining_batch_quantity:
           updatedBatchResult.rows[0].quantity,
       };
     } catch (error) {
-      /*
-       * If anything fails, undo the inventory
-       * change and adjustment record.
-       */
       await client.query('ROLLBACK');
-
       throw error;
     } finally {
       client.release();

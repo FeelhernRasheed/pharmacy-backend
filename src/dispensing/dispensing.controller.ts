@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
@@ -36,9 +37,11 @@ export class DispensingController {
   @Post()
   createDispensing(
     @Body() createDispensingDto: CreateDispensingDto,
+    @Req() req: any,
   ) {
     return this.dispensingService.createDispensing(
       createDispensingDto,
+      req.user.userId,
     );
   }
 
@@ -46,9 +49,11 @@ export class DispensingController {
   createDispensingItem(
     @Body()
     createDispensingItemDto: CreateDispensingItemDto,
+    @Req() req: any,
   ) {
     return this.dispensingService.createDispensingItem(
       createDispensingItemDto,
+      req.user.userId,
     );
   }
 }

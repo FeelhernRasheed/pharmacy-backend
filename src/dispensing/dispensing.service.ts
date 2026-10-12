@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
 
 import { CreateDispensingDto } from './dto/create-dispensing.dto';
@@ -13,6 +14,7 @@ import { CreateDispensingItemDto } from './dto/create-dispensing-item.dto';
 export class DispensingService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getDispensings() {
@@ -108,13 +110,19 @@ export class DispensingService {
 
   async createDispensing(
     createDispensingDto: CreateDispensingDto,
+    actorUserId?: number,
   ) {
     const {
       prescription_id,
-      dispensed_by,
       notes,
       status,
     } = createDispensingDto;
+
+    if (!actorUserId) {
+      throw new NotFoundException(
+        'Authenticated user not found',
+      );
+    }
 
     const prescriptionResult =
       await this.databaseService
@@ -138,7 +146,7 @@ export class DispensingService {
         `SELECT id
          FROM users
          WHERE id = $1`,
-        [dispensed_by],
+        [actorUserId],
       );
 
     if (userResult.rows.length === 0) {
@@ -168,17 +176,28 @@ export class DispensingService {
            created_at`,
         [
           prescription_id,
-          dispensed_by,
+          actorUserId,
           notes ?? null,
           status ?? 'COMPLETED',
         ],
       );
 
-    return result.rows[0];
+    const createdDispensing = result.rows[0];
+
+    await this.auditLogsService.createAuditLog(
+      actorUserId,
+      'CREATE',
+      'DISPENSINGS',
+      createdDispensing.id,
+      `Created dispensing: ${createdDispensing.id} for prescription: ${prescription_id}`,
+    );
+
+    return createdDispensing;
   }
 
   async createDispensingItem(
     createDispensingItemDto: CreateDispensingItemDto,
+    actorUserId?: number,
   ) {
     const {
       dispensing_id,
@@ -187,16 +206,18 @@ export class DispensingService {
       quantity,
     } = createDispensingItemDto;
 
-    const pool = this.databaseService.getPool();
+    if (!actorUserId) {
+      throw new NotFoundException(
+        'Authenticated user not found',
+      );
+    }
 
+    const pool = this.databaseService.getPool();
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
-      /*
-       * 1. Get the dispensing record and lock it.
-       */
       const dispensingResult = await client.query(
         `SELECT
            id,
@@ -216,9 +237,6 @@ export class DispensingService {
       const dispensing =
         dispensingResult.rows[0];
 
-      /*
-       * 2. Get the prescription item.
-       */
       const prescriptionItemResult =
         await client.query(
           `SELECT
@@ -243,10 +261,6 @@ export class DispensingService {
       const prescriptionItem =
         prescriptionItemResult.rows[0];
 
-      /*
-       * 3. Make sure the prescription item
-       * belongs to the dispensing prescription.
-       */
       if (
         prescriptionItem.prescription_id !==
         dispensing.prescription_id
@@ -256,10 +270,6 @@ export class DispensingService {
         );
       }
 
-      /*
-       * 4. Check how much of this prescription item
-       * has already been dispensed.
-       */
       const dispensedResult =
         await client.query(
           `SELECT
@@ -277,18 +287,12 @@ export class DispensingService {
         prescriptionItem.quantity -
         alreadyDispensed;
 
-      /*
-       * 5. Prevent dispensing more than prescribed.
-       */
       if (quantity > remainingQuantity) {
         throw new BadRequestException(
           `Dispensing quantity exceeds remaining prescription quantity. Remaining quantity: ${remainingQuantity}`,
         );
       }
 
-      /*
-       * 6. Lock the medicine batch.
-       */
       const batchResult = await client.query(
         `SELECT
            id,
@@ -310,10 +314,6 @@ export class DispensingService {
 
       const batch = batchResult.rows[0];
 
-      /*
-       * 7. Make sure the batch contains
-       * the correct medicine.
-       */
       if (
         batch.medicine_id !==
         prescriptionItem.medicine_id
@@ -323,18 +323,12 @@ export class DispensingService {
         );
       }
 
-      /*
-       * 8. Check available stock.
-       */
       if (quantity > batch.quantity) {
         throw new BadRequestException(
           `Insufficient stock in medicine batch. Available quantity: ${batch.quantity}`,
         );
       }
 
-      /*
-       * 9. Reduce inventory.
-       */
       const updatedBatchResult =
         await client.query(
           `UPDATE medicine_batches
@@ -349,9 +343,6 @@ export class DispensingService {
           [quantity, batch_id],
         );
 
-      /*
-       * 10. Create dispensing item.
-       */
       const dispensingItemResult =
         await client.query(
           `INSERT INTO dispensing_items
@@ -377,25 +368,28 @@ export class DispensingService {
           ],
         );
 
-      /*
-       * 11. Commit everything together.
-       */
       await client.query('COMMIT');
 
+      const createdItem =
+        dispensingItemResult.rows[0];
+
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'DISPENSING_ITEMS',
+        createdItem.id,
+        `Created dispensing item: ${createdItem.id} for dispensing: ${dispensing_id}`,
+      );
+
       return {
-        ...dispensingItemResult.rows[0],
+        ...createdItem,
         remaining_prescription_quantity:
           remainingQuantity - quantity,
         remaining_batch_quantity:
           updatedBatchResult.rows[0].quantity,
       };
     } catch (error) {
-      /*
-       * If anything fails, undo every database
-       * operation performed in this transaction.
-       */
       await client.query('ROLLBACK');
-
       throw error;
     } finally {
       client.release();

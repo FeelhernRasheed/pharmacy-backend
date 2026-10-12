@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
+
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 
@@ -7,6 +13,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 export class SuppliersService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getSuppliers() {
@@ -38,7 +45,10 @@ export class SuppliersService {
     return result.rows[0];
   }
 
-  async createSupplier(createSupplierDto: CreateSupplierDto) {
+  async createSupplier(
+    createSupplierDto: CreateSupplierDto,
+    actorUserId?: number,
+  ) {
     const {
       name,
       phone,
@@ -66,12 +76,25 @@ export class SuppliersService {
         ],
       );
 
-    return result.rows[0];
+    const createdSupplier = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'CREATE',
+        'SUPPLIERS',
+        createdSupplier.id,
+        `Created supplier: ${createdSupplier.id}`,
+      );
+    }
+
+    return createdSupplier;
   }
 
   async updateSupplier(
     id: number,
     updateSupplierDto: UpdateSupplierDto,
+    actorUserId?: number,
   ) {
     const {
       name,
@@ -104,10 +127,25 @@ export class SuppliersService {
       throw new NotFoundException('Supplier not found');
     }
 
-    return result.rows[0];
+    const updatedSupplier = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'UPDATE',
+        'SUPPLIERS',
+        updatedSupplier.id,
+        `Updated supplier: ${updatedSupplier.id}`,
+      );
+    }
+
+    return updatedSupplier;
   }
 
-  async deleteSupplier(id: number) {
+  async deleteSupplier(
+    id: number,
+    actorUserId?: number,
+  ) {
     const result = await this.databaseService
       .getPool()
       .query(
@@ -121,9 +159,21 @@ export class SuppliersService {
       throw new NotFoundException('Supplier not found');
     }
 
+    const deletedSupplier = result.rows[0];
+
+    if (actorUserId) {
+      await this.auditLogsService.createAuditLog(
+        actorUserId,
+        'DELETE',
+        'SUPPLIERS',
+        deletedSupplier.id,
+        `Deleted supplier: ${deletedSupplier.id}`,
+      );
+    }
+
     return {
       message: 'Supplier deleted successfully',
-      supplier: result.rows[0],
+      supplier: deletedSupplier,
     };
   }
 }

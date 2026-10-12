@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
@@ -38,9 +39,11 @@ export class StockAdjustmentsController {
   createStockAdjustment(
     @Body()
     createStockAdjustmentDto: CreateStockAdjustmentDto,
+    @Req() req: any,
   ) {
     return this.stockAdjustmentsService.createStockAdjustment(
       createStockAdjustmentDto,
+      req.user.userId,
     );
   }
 }

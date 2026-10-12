@@ -28,8 +28,4 @@ export class CreateStockAdjustmentDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
-
-  @IsInt()
-  @Min(1)
-  adjusted_by: number;
 }

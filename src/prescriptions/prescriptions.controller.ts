@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
@@ -36,9 +37,11 @@ export class PrescriptionsController {
   @Post()
   createPrescription(
     @Body() createPrescriptionDto: CreatePrescriptionDto,
+    @Req() req: any,
   ) {
     return this.prescriptionsService.createPrescription(
       createPrescriptionDto,
+      req.user.userId,
     );
   }
 
@@ -46,9 +49,11 @@ export class PrescriptionsController {
   createPrescriptionItem(
     @Body()
     createPrescriptionItemDto: CreatePrescriptionItemDto,
+    @Req() req: any,
   ) {
     return this.prescriptionsService.createPrescriptionItem(
       createPrescriptionItemDto,
+      req.user.userId,
     );
   }
 }
