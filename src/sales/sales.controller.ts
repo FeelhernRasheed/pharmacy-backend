@@ -1,3 +1,4 @@
+
 import {
   Body,
   Controller,
@@ -10,12 +11,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SalesService } from './sales.service';
 
+@ApiTags('Sales')
+@ApiBearerAuth('bearer')
 @Controller('sales')
 @UseGuards(JwtAuthGuard)
 export class SalesController {

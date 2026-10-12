@@ -4,11 +4,14 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { ExpiryManagementService } from './expiry-management.service';
 
+@ApiTags('Expiry Management')
+@ApiBearerAuth('bearer')
 @Controller('expiry-management')
 @UseGuards(JwtAuthGuard)
 export class ExpiryManagementController {
@@ -25,9 +28,7 @@ export class ExpiryManagementController {
   getExpiringSoon(
     @Query('days') days?: string,
   ) {
-    const numberOfDays = days
-      ? Number(days)
-      : 30;
+    const numberOfDays = days ? Number(days) : 30;
 
     return this.expiryManagementService.getExpiringSoon(
       numberOfDays,

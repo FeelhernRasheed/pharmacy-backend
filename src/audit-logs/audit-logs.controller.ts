@@ -5,6 +5,7 @@ import {
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -12,6 +13,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 
 import { AuditLogsService } from './audit-logs.service';
 
+@ApiTags('Audit Logs')
+@ApiBearerAuth('bearer')
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')

@@ -8,12 +8,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
 import { StockAdjustmentsService } from './stock-adjustments.service';
 
+@ApiTags('Stock Adjustments')
+@ApiBearerAuth('bearer')
 @Controller('stock-adjustments')
 @UseGuards(JwtAuthGuard)
 export class StockAdjustmentsController {
@@ -30,15 +33,12 @@ export class StockAdjustmentsController {
   getStockAdjustmentById(
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.stockAdjustmentsService.getStockAdjustmentById(
-      id,
-    );
+    return this.stockAdjustmentsService.getStockAdjustmentById(id);
   }
 
   @Post()
   createStockAdjustment(
-    @Body()
-    createStockAdjustmentDto: CreateStockAdjustmentDto,
+    @Body() createStockAdjustmentDto: CreateStockAdjustmentDto,
     @Req() req: any,
   ) {
     return this.stockAdjustmentsService.createStockAdjustment(

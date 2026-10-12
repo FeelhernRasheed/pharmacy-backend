@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -15,6 +16,8 @@ import { CreateDispensingDto } from './dto/create-dispensing.dto';
 import { CreateDispensingItemDto } from './dto/create-dispensing-item.dto';
 import { DispensingService } from './dispensing.service';
 
+@ApiTags('Dispensing')
+@ApiBearerAuth('bearer')
 @Controller('dispensing')
 @UseGuards(JwtAuthGuard)
 export class DispensingController {
@@ -47,8 +50,7 @@ export class DispensingController {
 
   @Post('items')
   createDispensingItem(
-    @Body()
-    createDispensingItemDto: CreateDispensingItemDto,
+    @Body() createDispensingItemDto: CreateDispensingItemDto,
     @Req() req: any,
   ) {
     return this.dispensingService.createDispensingItem(

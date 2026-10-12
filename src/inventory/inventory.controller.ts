@@ -1,3 +1,4 @@
+
 import {
   Body,
   Controller,
@@ -10,6 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -17,6 +19,8 @@ import { CreateBatchDto } from './dto/create-batch.dto';
 import { UpdateBatchDto } from './dto/update-batch.dto';
 import { InventoryService } from './inventory.service';
 
+@ApiTags('Inventory')
+@ApiBearerAuth('bearer')
 @Controller('inventory')
 @UseGuards(JwtAuthGuard)
 export class InventoryController {

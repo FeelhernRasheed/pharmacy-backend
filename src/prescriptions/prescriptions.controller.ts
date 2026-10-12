@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -15,6 +16,8 @@ import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { CreatePrescriptionItemDto } from './dto/create-prescription-item.dto';
 import { PrescriptionsService } from './prescriptions.service';
 
+@ApiTags('Prescriptions')
+@ApiBearerAuth('bearer')
 @Controller('prescriptions')
 @UseGuards(JwtAuthGuard)
 export class PrescriptionsController {
@@ -47,8 +50,7 @@ export class PrescriptionsController {
 
   @Post('items')
   createPrescriptionItem(
-    @Body()
-    createPrescriptionItemDto: CreatePrescriptionItemDto,
+    @Body() createPrescriptionItemDto: CreatePrescriptionItemDto,
     @Req() req: any,
   ) {
     return this.prescriptionsService.createPrescriptionItem(

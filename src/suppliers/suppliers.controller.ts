@@ -1,3 +1,4 @@
+
 import {
   Body,
   Controller,
@@ -10,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -17,6 +19,8 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { SuppliersService } from './suppliers.service';
 
+@ApiTags('Suppliers')
+@ApiBearerAuth('bearer')
 @Controller('suppliers')
 @UseGuards(JwtAuthGuard)
 export class SuppliersController {
