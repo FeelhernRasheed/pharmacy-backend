@@ -30,11 +30,13 @@ export class UsersController {
   ) {}
 
   @Get()
+  @Roles('ADMIN')
   getUsers() {
     return this.usersService.getUsers();
   }
 
   @Get(':id')
+  @Roles('ADMIN')
   getUserById(
     @Param('id', ParseIntPipe) id: number,
   ) {

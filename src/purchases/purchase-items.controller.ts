@@ -1,3 +1,4 @@
+
 import {
   Body,
   Controller,
@@ -8,12 +9,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreatePurchaseItemDto } from './dto/create-purchase-item.dto';
 import { PurchaseItemsService } from './purchase-items.service';
 
+@ApiTags('Purchase Items')
+@ApiBearerAuth('bearer')
 @Controller('purchase-items')
 @UseGuards(JwtAuthGuard)
 export class PurchaseItemsController {
