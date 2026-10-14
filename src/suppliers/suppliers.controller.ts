@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
@@ -22,7 +24,7 @@ import { SuppliersService } from './suppliers.service';
 @ApiTags('Suppliers')
 @ApiBearerAuth('bearer')
 @Controller('suppliers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SuppliersController {
   constructor(
     private readonly suppliersService: SuppliersService,
@@ -41,6 +43,7 @@ export class SuppliersController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createSupplier(
     @Body() createSupplierDto: CreateSupplierDto,
     @Req() req: any,
@@ -52,6 +55,7 @@ export class SuppliersController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   updateSupplier(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateSupplierDto: UpdateSupplierDto,
@@ -65,6 +69,7 @@ export class SuppliersController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   deleteSupplier(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: any,
