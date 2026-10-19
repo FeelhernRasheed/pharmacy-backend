@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { validateEnv } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { MedicinesModule } from './medicines/medicines.module';
 import { CategoriesModule } from './categories/categories.module';
@@ -26,6 +27,8 @@ import { ReportsModule } from './reports/reports.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateEnv,
+      ignoreEnvFile: process.env.NODE_ENV === 'production',
     }),
     DatabaseModule,
     MedicinesModule,

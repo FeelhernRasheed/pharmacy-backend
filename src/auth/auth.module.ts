@@ -25,7 +25,13 @@ import { RolesGuard } from './guards/roles.guard';
         secret: configService.getOrThrow<string>('JWT_SECRET'),
 
         signOptions: {
-          expiresIn: '1h',
+          // Format is validated at startup by validateEnv
+          // (^\d+[smhd]$), so the cast to the ms-lib
+          // StringValue type is safe.
+          expiresIn: configService.get<string>(
+            'JWT_EXPIRY',
+            '1h',
+          ) as `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`,
         },
       }),
     }),
