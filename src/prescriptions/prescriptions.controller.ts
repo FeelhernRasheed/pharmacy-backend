@@ -11,6 +11,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { CreatePrescriptionItemDto } from './dto/create-prescription-item.dto';
@@ -19,7 +21,7 @@ import { PrescriptionsService } from './prescriptions.service';
 @ApiTags('Prescriptions')
 @ApiBearerAuth('bearer')
 @Controller('prescriptions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PrescriptionsController {
   constructor(
     private readonly prescriptionsService: PrescriptionsService,
@@ -38,6 +40,7 @@ export class PrescriptionsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createPrescription(
     @Body() createPrescriptionDto: CreatePrescriptionDto,
     @Req() req: any,
@@ -49,6 +52,7 @@ export class PrescriptionsController {
   }
 
   @Post('items')
+  @Roles('ADMIN', 'PHARMACIST')
   createPrescriptionItem(
     @Body() createPrescriptionItemDto: CreatePrescriptionItemDto,
     @Req() req: any,

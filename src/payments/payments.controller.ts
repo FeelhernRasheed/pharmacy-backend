@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentsService } from './payments.service';
@@ -20,7 +22,7 @@ import { PaymentsService } from './payments.service';
 @ApiTags('Payments')
 @ApiBearerAuth('bearer')
 @Controller('payments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
@@ -57,6 +59,7 @@ export class PaymentsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createPayment(
     @Body() createPaymentDto: CreatePaymentDto,
     @Req() req: any,

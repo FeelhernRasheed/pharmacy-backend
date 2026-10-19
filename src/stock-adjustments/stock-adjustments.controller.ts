@@ -11,6 +11,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
 import { StockAdjustmentsService } from './stock-adjustments.service';
@@ -18,7 +20,7 @@ import { StockAdjustmentsService } from './stock-adjustments.service';
 @ApiTags('Stock Adjustments')
 @ApiBearerAuth('bearer')
 @Controller('stock-adjustments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class StockAdjustmentsController {
   constructor(
     private readonly stockAdjustmentsService: StockAdjustmentsService,
@@ -37,6 +39,7 @@ export class StockAdjustmentsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createStockAdjustment(
     @Body() createStockAdjustmentDto: CreateStockAdjustmentDto,
     @Req() req: any,

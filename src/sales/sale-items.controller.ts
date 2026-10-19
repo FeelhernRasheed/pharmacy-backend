@@ -5,11 +5,22 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+
 import { CreateSaleItemDto } from './dto/create-sale-item.dto';
 import { SaleItemsService } from './sale-items.service';
 
+@ApiTags('Sale Items')
+@ApiBearerAuth('bearer')
 @Controller('sale-items')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SaleItemsController {
   constructor(
     private readonly saleItemsService: SaleItemsService,
@@ -23,11 +34,14 @@ export class SaleItemsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createSaleItem(
     @Body() createSaleItemDto: CreateSaleItemDto,
+    @Req() req: any,
   ) {
     return this.saleItemsService.createSaleItem(
       createSaleItemDto,
+      req.user.userId,
     );
   }
 }

@@ -11,6 +11,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateDispensingDto } from './dto/create-dispensing.dto';
 import { CreateDispensingItemDto } from './dto/create-dispensing-item.dto';
@@ -19,7 +21,7 @@ import { DispensingService } from './dispensing.service';
 @ApiTags('Dispensing')
 @ApiBearerAuth('bearer')
 @Controller('dispensing')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class DispensingController {
   constructor(
     private readonly dispensingService: DispensingService,
@@ -38,6 +40,7 @@ export class DispensingController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createDispensing(
     @Body() createDispensingDto: CreateDispensingDto,
     @Req() req: any,
@@ -49,6 +52,7 @@ export class DispensingController {
   }
 
   @Post('items')
+  @Roles('ADMIN', 'PHARMACIST')
   createDispensingItem(
     @Body() createDispensingItemDto: CreateDispensingItemDto,
     @Req() req: any,

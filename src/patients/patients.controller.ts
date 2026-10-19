@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
@@ -22,7 +24,7 @@ import { PatientsService } from './patients.service';
 @ApiTags('Patients')
 @ApiBearerAuth('bearer')
 @Controller('patients')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PatientsController {
   constructor(
     private readonly patientsService: PatientsService,
@@ -41,6 +43,7 @@ export class PatientsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createPatient(
     @Body() createPatientDto: CreatePatientDto,
     @Req() req: any,
@@ -52,6 +55,7 @@ export class PatientsController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   updatePatient(
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePatientDto: UpdatePatientDto,
@@ -65,6 +69,7 @@ export class PatientsController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN')
   deletePatient(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: any,

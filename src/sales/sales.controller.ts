@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SalesService } from './sales.service';
@@ -21,7 +23,7 @@ import { SalesService } from './sales.service';
 @ApiTags('Sales')
 @ApiBearerAuth('bearer')
 @Controller('sales')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SalesController {
   constructor(
     private readonly salesService: SalesService,
@@ -40,6 +42,7 @@ export class SalesController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createSale(
     @Body() createSaleDto: CreateSaleDto,
     @Req() req: any,
@@ -51,6 +54,7 @@ export class SalesController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   updateSale(
     @Param('id', ParseIntPipe) id: number,
     @Body('status') status: string,
@@ -64,6 +68,7 @@ export class SalesController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN')
   deleteSale(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: any,

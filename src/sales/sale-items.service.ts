@@ -43,6 +43,7 @@ export class SaleItemsService {
 
   async createSaleItem(
     createSaleItemDto: CreateSaleItemDto,
+    actorUserId?: number,
   ) {
     const {
       sale_id,
