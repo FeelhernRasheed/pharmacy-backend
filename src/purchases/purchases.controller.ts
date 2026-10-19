@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
@@ -22,7 +24,7 @@ import { PurchasesService } from './purchases.service';
 @ApiTags('Purchases')
 @ApiBearerAuth('bearer')
 @Controller('purchases')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PurchasesController {
   constructor(
     private readonly purchasesService: PurchasesService,
@@ -41,6 +43,7 @@ export class PurchasesController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createPurchase(
     @Body() createPurchaseDto: CreatePurchaseDto,
     @Req() req: any,
@@ -52,6 +55,7 @@ export class PurchasesController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   updatePurchase(
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePurchaseDto: UpdatePurchaseDto,
@@ -65,6 +69,7 @@ export class PurchasesController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   deletePurchase(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: any,
