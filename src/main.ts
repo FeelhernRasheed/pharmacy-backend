@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import {
   EnvValidationError,
   isSwaggerEnabled,
@@ -19,6 +20,11 @@ async function bootstrap() {
   validateEnv(process.env);
 
   const app = await NestFactory.create(AppModule);
+
+  // Correlation ID first so every subsequent log line and error
+  // response can be tied to a single request.
+  app.use(requestIdMiddleware);
+
   const config = app.get(ConfigService);
 
   const expressInstance = app.getHttpAdapter().getInstance();

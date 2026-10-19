@@ -23,6 +23,7 @@ import { ExpiryManagementModule } from './expiry-management/expiry-management.mo
 import { LowStockModule } from './low-stock/low-stock.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { ReportsModule } from './reports/reports.module';
+import { HealthModule } from './health/health.module';
 
 
 @Module({
@@ -65,6 +66,7 @@ import { ReportsModule } from './reports/reports.module';
     LowStockModule,
     AuditLogsModule,
     ReportsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

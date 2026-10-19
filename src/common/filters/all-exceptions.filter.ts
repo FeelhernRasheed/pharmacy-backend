@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { getRequestId } from '../middleware/request-id.middleware';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -43,7 +44,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else {
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
+        `Unhandled exception on ${request.method} ${request.url} [requestId=${getRequestId(request) ?? 'none'}]`,
         exception instanceof Error
           ? exception.stack
           : String(exception),

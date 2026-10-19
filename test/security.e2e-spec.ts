@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 
 // Mirrors the production bootstrap setup from src/main.ts
 // (helmet options, ValidationPipe, exception filter).
@@ -17,6 +18,8 @@ async function createSecuredApp(): Promise<INestApplication<App>> {
   ).compile();
 
   const app = moduleFixture.createNestApplication();
+
+  app.use(requestIdMiddleware);
 
   app
     .getHttpAdapter()

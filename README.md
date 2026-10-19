@@ -54,7 +54,7 @@ Swagger UI: [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
 
 ## Authentication
 
-All endpoints (except `/`, `/hello`, and `/auth/login`) require a JWT bearer token.
+All endpoints (except `/`, `/hello`, `/health/live`, `/health/ready`, and `/auth/login`) require a JWT bearer token.
 
 ```bash
 curl -X POST http://localhost:3000/auth/login \
@@ -103,7 +103,8 @@ Write rules per module:
 | Tag | Base path | Endpoints |
 |---|---|---|
 | Auth | `/auth` | login |
-| App | `/` | health, hello, db-test (ADMIN) |
+| Health | `/health` | live, ready (public probes) |
+| App | `/` | root greeting, hello, db-test (ADMIN) |
 | Medicines | `/medicines` | CRUD |
 | Categories | `/categories` | CRUD |
 | Inventory | `/inventory` | batch CRUD |
