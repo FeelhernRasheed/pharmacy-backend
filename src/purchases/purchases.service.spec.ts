@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { DatabaseService } from '../database/database.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PurchasesService } from './purchases.service';
 
 describe('PurchasesService', () => {
@@ -6,7 +8,22 @@ describe('PurchasesService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PurchasesService],
+      providers: [
+    PurchasesService,
+    {
+      provide: DatabaseService,
+      useValue: {
+        getPool: jest.fn(),
+        testConnection: jest.fn(),
+      },
+    },
+    {
+      provide: AuditLogsService,
+      useValue: {
+        createAuditLog: jest.fn(),
+      },
+    },
+      ],
     }).compile();
 
     service = module.get<PurchasesService>(PurchasesService);
