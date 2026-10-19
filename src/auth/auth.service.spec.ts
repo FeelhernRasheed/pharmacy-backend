@@ -6,9 +6,21 @@ import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../database/database.service';
 import { AuthService } from './auth.service';
 
+// bcrypt's native exports are non-configurable, so wrap compare in a
+// pass-through jest.fn to count calls without changing behavior.
+jest.mock('bcrypt', () => {
+  const actual =
+    jest.requireActual<typeof import('bcrypt')>('bcrypt');
+  return {
+    ...actual,
+    compare: jest.fn(actual.compare),
+  };
+});
+
 describe('AuthService', () => {
   let service: AuthService;
   let queryMock: jest.Mock;
+  let signMock: jest.Mock;
 
   const activeUser = {
     id: 1,
@@ -21,6 +33,7 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     queryMock = jest.fn();
+    signMock = jest.fn().mockResolvedValue('signed-token');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -34,7 +47,7 @@ describe('AuthService', () => {
         {
           provide: JwtService,
           useValue: {
-            signAsync: jest.fn().mockResolvedValue('signed-token'),
+            signAsync: signMock,
           },
         },
       ],
@@ -74,7 +87,19 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('rejects an inactive user', async () => {
+    it('still performs a bcrypt compare for unknown users (timing safety)', async () => {
+      queryMock.mockResolvedValue({ rows: [] });
+      const compareMock = bcrypt.compare as unknown as jest.Mock;
+      compareMock.mockClear();
+
+      await expect(
+        service.login({ username: 'ghost', password: 'x' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(compareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an inactive user with the generic login error', async () => {
       queryMock.mockResolvedValue({
         rows: [{ ...activeUser, status: 'INACTIVE' }],
       });
@@ -84,7 +109,70 @@ describe('AuthService', () => {
           username: 'test_admin',
           password: 'correct-pass',
         }),
-      ).rejects.toThrow('User account is not active');
+      ).rejects.toThrow('Invalid username or password');
+    });
+
+    it('returns the same generic error for unknown, inactive, and wrong-password logins', async () => {
+      const messageOf = async (
+        attempt: () => Promise<unknown>,
+      ): Promise<string | null> => {
+        try {
+          await attempt();
+          return null;
+        } catch (error) {
+          return error instanceof Error
+            ? error.message
+            : String(error);
+        }
+      };
+
+      queryMock.mockResolvedValueOnce({ rows: [] });
+      const unknownUserMessage = await messageOf(() =>
+        service.login({ username: 'ghost', password: 'x' }),
+      );
+
+      queryMock.mockResolvedValueOnce({
+        rows: [{ ...activeUser, status: 'INACTIVE' }],
+      });
+      const inactiveUserMessage = await messageOf(() =>
+        service.login({
+          username: 'test_admin',
+          password: 'correct-pass',
+        }),
+      );
+
+      queryMock.mockResolvedValueOnce({ rows: [activeUser] });
+      const wrongPasswordMessage = await messageOf(() =>
+        service.login({
+          username: 'test_admin',
+          password: 'wrong-pass',
+        }),
+      );
+
+      expect(unknownUserMessage).toBe(
+        'Invalid username or password',
+      );
+      expect(inactiveUserMessage).toBe(unknownUserMessage);
+      expect(wrongPasswordMessage).toBe(unknownUserMessage);
+    });
+
+    it('performs a bcrypt compare for inactive users and issues no token', async () => {
+      queryMock.mockResolvedValue({
+        rows: [{ ...activeUser, status: 'INACTIVE' }],
+      });
+      const compareMock = bcrypt.compare as unknown as jest.Mock;
+      compareMock.mockClear();
+      signMock.mockClear();
+
+      await expect(
+        service.login({
+          username: 'test_admin',
+          password: 'correct-pass',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(compareMock).toHaveBeenCalledTimes(1);
+      expect(signMock).not.toHaveBeenCalled();
     });
 
     it('rejects a wrong password', async () => {

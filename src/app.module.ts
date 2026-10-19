@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validateEnv } from './config/env.validation';
@@ -30,6 +32,21 @@ import { ReportsModule } from './reports/reports.module';
       validate: validateEnv,
       ignoreEnvFile: process.env.NODE_ENV === 'production',
     }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'default',
+            limit: config.get<number>('RATE_LIMIT_MAX', 100),
+            // Throttler v6 expects ttl in milliseconds;
+            // the env value is validated in seconds.
+            ttl: config.get<number>('RATE_LIMIT_TTL', 60) * 1000,
+          },
+        ],
+      }),
+    }),
     DatabaseModule,
     MedicinesModule,
     CategoriesModule,
@@ -50,6 +67,9 @@ import { ReportsModule } from './reports/reports.module';
     ReportsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

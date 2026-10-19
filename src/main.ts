@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import {
@@ -10,6 +11,7 @@ import {
   resolveCorsOptions,
   validateEnv,
 } from './config/env.validation';
+import { applyTrustProxy } from './config/trust-proxy';
 
 async function bootstrap() {
   // Pre-flight validation so configuration errors are reported
@@ -19,9 +21,44 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
+  const expressInstance = app.getHttpAdapter().getInstance();
+
+  // Safe by default: when TRUST_PROXY is unset, Express ignores
+  // X-Forwarded-For entirely. Must match the deployment topology;
+  // the trusted proxy itself must overwrite forwarded headers.
+  applyTrustProxy(
+    expressInstance,
+    config.get<number | string>('TRUST_PROXY'),
+  );
+
+  expressInstance.disable('x-powered-by');
+
+  // Security headers. CSP is relaxed just enough for the Swagger UI
+  // (inline bootstrap script + styles); everything else stays strict.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          formAction: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
+        },
+      },
+      frameguard: { action: 'deny' },
+    }),
+  );
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true,
       transform: true,
     }),
   );

@@ -92,6 +92,130 @@ describe('validateEnv', () => {
     );
   });
 
+  it('applies rate-limit defaults when unset', () => {
+    const result = validateEnv({ ...validBase });
+
+    expect(result.RATE_LIMIT_MAX).toBe(100);
+    expect(result.RATE_LIMIT_TTL).toBe(60);
+    expect(result.AUTH_RATE_LIMIT_MAX).toBe(10);
+    expect(result.AUTH_RATE_LIMIT_TTL).toBe(60);
+  });
+
+  it('parses custom rate-limit settings to numbers', () => {
+    const result = validateEnv({
+      ...validBase,
+      RATE_LIMIT_MAX: '250',
+      RATE_LIMIT_TTL: '120',
+      AUTH_RATE_LIMIT_MAX: '5',
+      AUTH_RATE_LIMIT_TTL: '30',
+    });
+
+    expect(result.RATE_LIMIT_MAX).toBe(250);
+    expect(result.RATE_LIMIT_TTL).toBe(120);
+    expect(result.AUTH_RATE_LIMIT_MAX).toBe(5);
+    expect(result.AUTH_RATE_LIMIT_TTL).toBe(30);
+  });
+
+  it('rejects an out-of-range RATE_LIMIT_MAX', () => {
+    expect(() =>
+      validateEnv({ ...validBase, RATE_LIMIT_MAX: '0' }),
+    ).toThrow(
+      'RATE_LIMIT_MAX must be an integer between 1 and 10000',
+    );
+  });
+
+  it('rejects an out-of-range AUTH_RATE_LIMIT_MAX', () => {
+    expect(() =>
+      validateEnv({ ...validBase, AUTH_RATE_LIMIT_MAX: '500' }),
+    ).toThrow(
+      'AUTH_RATE_LIMIT_MAX must be an integer between 1 and 100',
+    );
+  });
+
+  it('disables TRUST_PROXY by default', () => {
+    const result = validateEnv({ ...validBase });
+
+    expect(result.TRUST_PROXY).toBeUndefined();
+    expect('TRUST_PROXY' in result).toBe(false);
+  });
+
+  it('treats an empty TRUST_PROXY as disabled', () => {
+    const result = validateEnv({
+      ...validBase,
+      TRUST_PROXY: '  ',
+    });
+
+    expect(result.TRUST_PROXY).toBeUndefined();
+  });
+
+  it('parses a valid TRUST_PROXY hop count', () => {
+    const result = validateEnv({
+      ...validBase,
+      TRUST_PROXY: '1',
+    });
+
+    expect(result.TRUST_PROXY).toBe(1);
+  });
+
+  it('parses a valid TRUST_PROXY address list', () => {
+    const result = validateEnv({
+      ...validBase,
+      TRUST_PROXY: ' 10.0.0.0/8 , 192.168.1.10 , 2001:db8::/32 ',
+    });
+
+    expect(result.TRUST_PROXY).toBe(
+      '10.0.0.0/8,192.168.1.10,2001:db8::/32',
+    );
+  });
+
+  it('rejects a TRUST_PROXY hop count of zero', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: '0' }),
+    ).toThrow(
+      'TRUST_PROXY hop count must be an integer between 1 and 10',
+    );
+  });
+
+  it('rejects a TRUST_PROXY hop count above the maximum', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: '11' }),
+    ).toThrow(
+      'TRUST_PROXY hop count must be an integer between 1 and 10',
+    );
+  });
+
+  it('rejects TRUST_PROXY values that are not hop counts or addresses', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: 'true' }),
+    ).toThrow(
+      'TRUST_PROXY entry "true" is not a valid IP address or CIDR range',
+    );
+  });
+
+  it('rejects a malformed TRUST_PROXY address', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: '999.1.1.1' }),
+    ).toThrow(
+      'TRUST_PROXY entry "999.1.1.1" is not a valid IP address or CIDR range',
+    );
+  });
+
+  it('rejects a TRUST_PROXY CIDR with an out-of-range prefix', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: '10.0.0.0/33' }),
+    ).toThrow(
+      'TRUST_PROXY entry "10.0.0.0/33" is not a valid IP address or CIDR range',
+    );
+  });
+
+  it('rejects TRUST_PROXY lists with empty entries', () => {
+    expect(() =>
+      validateEnv({ ...validBase, TRUST_PROXY: '1.2.3.4,' }),
+    ).toThrow(
+      'TRUST_PROXY entry "" is not a valid IP address or CIDR range',
+    );
+  });
+
   it('rejects missing required database variables', () => {
     const { DB_HOST: _host, ...withoutHost } = validBase;
 

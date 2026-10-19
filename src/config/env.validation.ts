@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 const NODE_ENVS = ['development', 'test', 'production'] as const;
 
 export class EnvValidationError extends Error {
@@ -83,6 +85,74 @@ function parseBoundedInt(
   return parsed;
 }
 
+const TRUST_PROXY_MAX_HOPS = 10;
+
+function isValidTrustProxyEntry(entry: string): boolean {
+  if (entry.length === 0) {
+    return false;
+  }
+  const parts = entry.split('/');
+  if (parts.length > 2) {
+    return false;
+  }
+  const [address, prefix] = parts;
+  const family = isIP(address);
+  if (family === 0) {
+    return false;
+  }
+  if (prefix === undefined) {
+    return true;
+  }
+  if (!/^\d+$/.test(prefix)) {
+    return false;
+  }
+  const bits = Number(prefix);
+  return bits <= (family === 4 ? 32 : 128);
+}
+
+// Strictly parses the optional TRUST_PROXY setting. Unset or empty
+// means "disabled": forwarded headers are never trusted. Accepted
+// forms:
+//   - a hop count: an integer from 1 to TRUST_PROXY_MAX_HOPS
+//   - a comma-separated list of IP addresses or CIDR ranges
+// Anything else (e.g. "true", wildcards, malformed addresses) is
+// rejected so Express can never end up trusting arbitrary clients.
+function parseTrustProxy(
+  raw: string | undefined,
+  issues: string[],
+): number | string | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(raw)) {
+    const hops = Number(raw);
+    if (hops < 1 || hops > TRUST_PROXY_MAX_HOPS) {
+      issues.push(
+        `TRUST_PROXY hop count must be an integer between 1 and ${TRUST_PROXY_MAX_HOPS}`,
+      );
+      return undefined;
+    }
+    return hops;
+  }
+
+  const validEntries: string[] = [];
+  for (const entry of raw.split(',').map((part) => part.trim())) {
+    if (isValidTrustProxyEntry(entry)) {
+      validEntries.push(entry);
+    } else {
+      issues.push(
+        `TRUST_PROXY entry "${entry}" is not a valid IP address or CIDR range`,
+      );
+    }
+  }
+
+  if (validEntries.length === 0) {
+    return undefined;
+  }
+  return validEntries.join(',');
+}
+
 export function validateEnv(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -160,6 +230,54 @@ export function validateEnv(
     120_000,
     issues,
   );
+
+  env.RATE_LIMIT_MAX = parseBoundedInt(
+    readTrimmed(config, 'RATE_LIMIT_MAX'),
+    'RATE_LIMIT_MAX',
+    100,
+    1,
+    10_000,
+    issues,
+  );
+
+  env.RATE_LIMIT_TTL = parseBoundedInt(
+    readTrimmed(config, 'RATE_LIMIT_TTL'),
+    'RATE_LIMIT_TTL',
+    60,
+    1,
+    3_600,
+    issues,
+  );
+
+  env.AUTH_RATE_LIMIT_MAX = parseBoundedInt(
+    readTrimmed(config, 'AUTH_RATE_LIMIT_MAX'),
+    'AUTH_RATE_LIMIT_MAX',
+    10,
+    1,
+    100,
+    issues,
+  );
+
+  env.AUTH_RATE_LIMIT_TTL = parseBoundedInt(
+    readTrimmed(config, 'AUTH_RATE_LIMIT_TTL'),
+    'AUTH_RATE_LIMIT_TTL',
+    60,
+    1,
+    3_600,
+    issues,
+  );
+
+  // Optional and disabled by default: X-Forwarded-For stays
+  // untrusted unless TRUST_PROXY is explicitly configured.
+  const trustProxy = parseTrustProxy(
+    readTrimmed(config, 'TRUST_PROXY'),
+    issues,
+  );
+  if (trustProxy === undefined) {
+    delete env.TRUST_PROXY;
+  } else {
+    env.TRUST_PROXY = trustProxy;
+  }
 
   const jwtSecret = readRaw(config, 'JWT_SECRET');
   if (jwtSecret === undefined) {
