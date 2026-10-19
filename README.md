@@ -1,124 +1,169 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Pharmacy Management System — Backend API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS + PostgreSQL backend for managing a pharmacy: medicines, inventory batches, purchasing, sales, payments, prescriptions, dispensing, stock adjustments, expiry/low-stock monitoring, audit logs, and reporting.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech stack
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Framework:** NestJS 12 (TypeScript)
+- **Database:** PostgreSQL (raw SQL via `pg` pool)
+- **Auth:** JWT (passport-jwt) with role-based access control
+- **Validation:** class-validator + global `ValidationPipe` (whitelist, transform)
+- **Docs:** Swagger UI at `/api-docs`
 
 ## Project setup
 
+1. Install dependencies:
+
 ```bash
-$ npm install
+npm install
 ```
 
-## Compile and run the project
+2. Create the database (PostgreSQL):
+
+```sql
+CREATE DATABASE "Pharmacy-db";
+```
+
+3. Configure environment variables — copy `.env.example` to `.env` and fill in the values:
+
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=Pharmacy-db
+DB_USER=postgres
+DB_PASSWORD=your_password
+JWT_SECRET=a-long-random-secret
+CORS_ORIGIN=http://localhost:3000
+```
+
+4. Start the server:
 
 ```bash
 # development
-$ npm run start
+npm run start
 
 # watch mode
-$ npm run start:dev
+npm run start:dev
 
-# production mode
-$ npm run start:prod
+# production
+npm run build
+npm run start:prod
 ```
 
-## Run tests
+Swagger UI: [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
+
+## Authentication
+
+All endpoints (except `/`, `/hello`, and `/auth/login`) require a JWT bearer token.
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your_password"}'
 ```
 
-## Deployment
+Response includes `access_token`. Send it on every request:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+```
+Authorization: Bearer <access_token>
+```
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Tokens expire after 1 hour. Every authenticated request re-checks the user in the database — deleting or deactivating a user revokes their access immediately.
+
+## Roles & permissions
+
+| Role | Capabilities |
+|---|---|
+| **ADMIN** | Everything, including user management, sales/patient deletion |
+| **PHARMACIST** | Medicines, categories, inventory, purchasing, prescriptions, dispensing, stock adjustments, sales + payments |
+| **CASHIER** | Patients, sales, sale items, payments, read-only elsewhere |
+
+Write rules per module:
+
+| Module | Create/Update | Delete |
+|---|---|---|
+| Medicines, Categories, Inventory, Suppliers | ADMIN, PHARMACIST | ADMIN, PHARMACIST |
+| Purchases, Purchase Items | ADMIN, PHARMACIST | ADMIN, PHARMACIST |
+| Prescriptions, Dispensing, Stock Adjustments | ADMIN, PHARMACIST | — |
+| Sales, Sale Items, Payments, Patients | ADMIN, PHARMACIST, CASHIER | ADMIN only (sales/patients) |
+| Users | ADMIN | — |
+
+## Business rules
+
+- **Expiry:** batches past their expiry date cannot be received, sold, or dispensed (400).
+- **Stock:** adding sale items and dispensing items decrements batch stock atomically; insufficient stock is rejected (400).
+- **Payments:** each payment is validated against the sale's remaining balance inside a transaction with row locking; overpayment and payments on cancelled sales are rejected.
+- **Cancellations:** cancelling a sale restores stock and is blocked if completed payments exist; cancelled sales cannot be reopened.
+- **Deletes:** deleting a sale/purchase with items or payments is rejected (409); deleting an inventory batch with stock or references is rejected.
+- **Adjustments:** stock adjustments only reduce quantity (DAMAGE / EXPIRED / LOST / CORRECTION).
+- **Audit log:** every create/update/delete records the acting user in `audit_logs`.
+
+## API surface
+
+| Tag | Base path | Endpoints |
+|---|---|---|
+| Auth | `/auth` | login |
+| App | `/` | health, hello, db-test (ADMIN) |
+| Medicines | `/medicines` | CRUD |
+| Categories | `/categories` | CRUD |
+| Inventory | `/inventory` | batch CRUD |
+| Suppliers | `/suppliers` | CRUD |
+| Purchases | `/purchases` | CRUD |
+| Purchase Items | `/purchase-items` | list, create |
+| Patients | `/patients` | CRUD |
+| Sales | `/sales` | CRUD |
+| Sale Items | `/sale-items` | list, create |
+| Payments | `/payments` | list, by-sale, by-status, create |
+| Prescriptions | `/prescriptions` | list, get, create, add item |
+| Dispensing | `/dispensing` | list, get, create, dispense item |
+| Stock Adjustments | `/stock-adjustments` | list, get, create |
+| Expiry Management | `/expiry-management` | expired, expiring-soon, valid |
+| Low Stock | `/low-stock` | low stock list |
+| Reports | `/reports` | sales, inventory, expiry, purchases, payments |
+| Users | `/users` | list, get, create, update |
+| Audit Logs | `/audit-logs` | list, get |
+
+Full request/response schemas, parameters, and role requirements are in the Swagger UI.
+
+## Error responses
+
+All errors follow a consistent shape:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Payment exceeds remaining balance. Remaining amount: 28.00",
+  "error": "Bad Request"
+}
+```
+
+- `400` — validation failure or business-rule violation
+- `401` — missing/invalid token or inactive user
+- `403` — authenticated but not authorized for the role
+- `404` — resource not found
+- `409` — conflict (e.g. deleting referenced data, duplicate username)
+- `500` — internal error (details are never leaked to clients)
+
+## Testing
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# unit tests (41 suites, 65 tests)
+npm test
+
+# coverage
+npm run test:cov
+
+# lint
+npm run lint
+
+# build
+npm run build
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Environment & security notes
 
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/overview) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `.env` is gitignored; only `.env.example` is committed.
+- Passwords are hashed with bcrypt (cost 10); `password_hash` is never returned by any endpoint.
+- `JWT_SECRET` is required — the app refuses to start without it.
+- CORS is enabled; restrict origins via `CORS_ORIGIN` (comma-separated) in production.
+- Stack traces and internal errors are stripped from non-HTTP exception responses by a global exception filter.

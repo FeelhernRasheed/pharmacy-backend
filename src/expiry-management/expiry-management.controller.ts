@@ -5,7 +5,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -20,11 +20,13 @@ export class ExpiryManagementController {
     private readonly expiryManagementService: ExpiryManagementService,
   ) {}
 
+  @ApiOperation({ summary: 'List expired medicine batches' })
   @Get('expired')
   getExpiredMedicines() {
     return this.expiryManagementService.getExpiredMedicines();
   }
 
+  @ApiOperation({ summary: 'List batches expiring within N days' })
   @Get('expiring-soon')
   getExpiringSoon(
     @Query('days') days?: string,
@@ -49,6 +51,7 @@ export class ExpiryManagementController {
     );
   }
 
+  @ApiOperation({ summary: 'List non-expired medicine batches' })
   @Get('valid')
   getValidMedicines() {
     return this.expiryManagementService.getValidMedicines();

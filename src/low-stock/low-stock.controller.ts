@@ -5,7 +5,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -20,6 +20,7 @@ export class LowStockController {
     private readonly lowStockService: LowStockService,
   ) {}
 
+  @ApiOperation({ summary: 'List low stock batches' })
   @Get()
   getLowStock(
     @Query('threshold') threshold?: string,

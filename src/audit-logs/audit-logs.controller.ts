@@ -5,7 +5,7 @@ import {
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -23,11 +23,13 @@ export class AuditLogsController {
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
+  @ApiOperation({ summary: 'List audit logs' })
   @Get()
   getAuditLogs() {
     return this.auditLogsService.getAuditLogs();
   }
 
+  @ApiOperation({ summary: 'Get audit log by ID' })
   @Get(':id')
   getAuditLogById(
     @Param('id', ParseIntPipe) id: number,

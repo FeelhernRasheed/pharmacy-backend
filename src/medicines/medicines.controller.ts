@@ -10,7 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -29,11 +29,13 @@ export class MedicinesController {
     private readonly medicinesService: MedicinesService,
   ) {}
 
+  @ApiOperation({ summary: 'List medicines' })
   @Get()
   getMedicines() {
     return this.medicinesService.getMedicines();
   }
 
+  @ApiOperation({ summary: 'Get medicine by ID' })
   @Get(':id')
   getMedicineById(
     @Param('id', ParseIntPipe) id: number,
@@ -41,6 +43,7 @@ export class MedicinesController {
     return this.medicinesService.getMedicineById(id);
   }
 
+  @ApiOperation({ summary: 'Create medicine' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createMedicine(
@@ -53,6 +56,7 @@ export class MedicinesController {
     );
   }
 
+  @ApiOperation({ summary: 'Update medicine' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST')
   updateMedicine(
@@ -67,6 +71,7 @@ export class MedicinesController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete medicine' })
   @Delete(':id')
   @Roles('ADMIN', 'PHARMACIST')
   deleteMedicine(

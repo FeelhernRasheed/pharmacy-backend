@@ -8,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,11 +27,13 @@ export class PrescriptionsController {
     private readonly prescriptionsService: PrescriptionsService,
   ) {}
 
+  @ApiOperation({ summary: 'List prescriptions' })
   @Get()
   getPrescriptions() {
     return this.prescriptionsService.getPrescriptions();
   }
 
+  @ApiOperation({ summary: 'Get prescription by ID' })
   @Get(':id')
   getPrescriptionById(
     @Param('id', ParseIntPipe) id: number,
@@ -39,6 +41,7 @@ export class PrescriptionsController {
     return this.prescriptionsService.getPrescriptionById(id);
   }
 
+  @ApiOperation({ summary: 'Create prescription' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createPrescription(
@@ -51,6 +54,7 @@ export class PrescriptionsController {
     );
   }
 
+  @ApiOperation({ summary: 'Add item to a prescription' })
   @Post('items')
   @Roles('ADMIN', 'PHARMACIST')
   createPrescriptionItem(

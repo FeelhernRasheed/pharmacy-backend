@@ -10,7 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -29,12 +29,14 @@ export class UsersController {
     private readonly usersService: UsersService,
   ) {}
 
+  @ApiOperation({ summary: 'List users' })
   @Get()
   @Roles('ADMIN')
   getUsers() {
     return this.usersService.getUsers();
   }
 
+  @ApiOperation({ summary: 'Get user by ID' })
   @Get(':id')
   @Roles('ADMIN')
   getUserById(
@@ -43,6 +45,7 @@ export class UsersController {
     return this.usersService.getUserById(id);
   }
 
+  @ApiOperation({ summary: 'Create user (password is hashed)' })
   @Post()
   @Roles('ADMIN')
   createUser(
@@ -55,6 +58,7 @@ export class UsersController {
     );
   }
 
+  @ApiOperation({ summary: 'Update user' })
   @Put(':id')
   @Roles('ADMIN')
   updateUser(

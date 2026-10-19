@@ -8,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -26,11 +26,13 @@ export class StockAdjustmentsController {
     private readonly stockAdjustmentsService: StockAdjustmentsService,
   ) {}
 
+  @ApiOperation({ summary: 'List stock adjustments' })
   @Get()
   getStockAdjustments() {
     return this.stockAdjustmentsService.getStockAdjustments();
   }
 
+  @ApiOperation({ summary: 'Get stock adjustment by ID' })
   @Get(':id')
   getStockAdjustmentById(
     @Param('id', ParseIntPipe) id: number,
@@ -38,6 +40,7 @@ export class StockAdjustmentsController {
     return this.stockAdjustmentsService.getStockAdjustmentById(id);
   }
 
+  @ApiOperation({ summary: 'Record stock adjustment (damage/expiry/loss)' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createStockAdjustment(

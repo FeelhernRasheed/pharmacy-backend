@@ -9,7 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,6 +27,7 @@ export class PurchaseItemsController {
     private readonly purchaseItemsService: PurchaseItemsService,
   ) {}
 
+  @ApiOperation({ summary: 'List purchase items' })
   @Get('purchase/:purchaseId')
   getPurchaseItems(
     @Param('purchaseId', ParseIntPipe) purchaseId: number,
@@ -36,6 +37,7 @@ export class PurchaseItemsController {
     );
   }
 
+  @ApiOperation({ summary: 'Add item to a purchase (updates stock)' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createPurchaseItem(

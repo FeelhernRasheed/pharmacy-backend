@@ -8,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -26,6 +26,7 @@ export class SaleItemsController {
     private readonly saleItemsService: SaleItemsService,
   ) {}
 
+  @ApiOperation({ summary: 'List sale items' })
   @Get('sale/:saleId')
   getSaleItems(
     @Param('saleId', ParseIntPipe) saleId: number,
@@ -33,6 +34,7 @@ export class SaleItemsController {
     return this.saleItemsService.getSaleItems(saleId);
   }
 
+  @ApiOperation({ summary: 'Add item to a sale (deducts stock)' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createSaleItem(

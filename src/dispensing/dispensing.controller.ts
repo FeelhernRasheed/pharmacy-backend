@@ -8,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,11 +27,13 @@ export class DispensingController {
     private readonly dispensingService: DispensingService,
   ) {}
 
+  @ApiOperation({ summary: 'List dispensing records' })
   @Get()
   getDispensings() {
     return this.dispensingService.getDispensings();
   }
 
+  @ApiOperation({ summary: 'Get dispensing record by ID' })
   @Get(':id')
   getDispensingById(
     @Param('id', ParseIntPipe) id: number,
@@ -39,6 +41,7 @@ export class DispensingController {
     return this.dispensingService.getDispensingById(id);
   }
 
+  @ApiOperation({ summary: 'Create dispensing record for a prescription' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createDispensing(
@@ -51,6 +54,7 @@ export class DispensingController {
     );
   }
 
+  @ApiOperation({ summary: 'Dispense items from a batch against a prescription item' })
   @Post('items')
   @Roles('ADMIN', 'PHARMACIST')
   createDispensingItem(

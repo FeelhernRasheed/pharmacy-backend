@@ -11,7 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,11 +30,13 @@ export class CategoriesController {
     private readonly categoriesService: CategoriesService,
   ) {}
 
+  @ApiOperation({ summary: 'List categories' })
   @Get()
   getCategories() {
     return this.categoriesService.getCategories();
   }
 
+  @ApiOperation({ summary: 'Get category by ID' })
   @Get(':id')
   getCategoryById(
     @Param('id', ParseIntPipe) id: number,
@@ -42,6 +44,7 @@ export class CategoriesController {
     return this.categoriesService.getCategoryById(id);
   }
 
+  @ApiOperation({ summary: 'Create category' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createCategory(
@@ -54,6 +57,7 @@ export class CategoriesController {
     );
   }
 
+  @ApiOperation({ summary: 'Update category' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST')
   updateCategory(
@@ -68,6 +72,7 @@ export class CategoriesController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete category' })
   @Delete(':id')
   @Roles('ADMIN', 'PHARMACIST')
   deleteCategory(

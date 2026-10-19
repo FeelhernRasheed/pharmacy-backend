@@ -11,7 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,11 +30,13 @@ export class PurchasesController {
     private readonly purchasesService: PurchasesService,
   ) {}
 
+  @ApiOperation({ summary: 'List purchases' })
   @Get()
   getPurchases() {
     return this.purchasesService.getPurchases();
   }
 
+  @ApiOperation({ summary: 'Get purchase by ID' })
   @Get(':id')
   getPurchaseById(
     @Param('id', ParseIntPipe) id: number,
@@ -42,6 +44,7 @@ export class PurchasesController {
     return this.purchasesService.getPurchaseById(id);
   }
 
+  @ApiOperation({ summary: 'Create purchase' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createPurchase(
@@ -54,6 +57,7 @@ export class PurchasesController {
     );
   }
 
+  @ApiOperation({ summary: 'Update purchase status (e.g. receive stock)' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST')
   updatePurchase(
@@ -68,6 +72,7 @@ export class PurchasesController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete purchase' })
   @Delete(':id')
   @Roles('ADMIN', 'PHARMACIST')
   deletePurchase(

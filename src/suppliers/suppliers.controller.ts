@@ -11,7 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,11 +30,13 @@ export class SuppliersController {
     private readonly suppliersService: SuppliersService,
   ) {}
 
+  @ApiOperation({ summary: 'List suppliers' })
   @Get()
   getSuppliers() {
     return this.suppliersService.getSuppliers();
   }
 
+  @ApiOperation({ summary: 'Get supplier by ID' })
   @Get(':id')
   getSupplierById(
     @Param('id', ParseIntPipe) id: number,
@@ -42,6 +44,7 @@ export class SuppliersController {
     return this.suppliersService.getSupplierById(id);
   }
 
+  @ApiOperation({ summary: 'Create supplier' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createSupplier(
@@ -54,6 +57,7 @@ export class SuppliersController {
     );
   }
 
+  @ApiOperation({ summary: 'Update supplier' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST')
   updateSupplier(
@@ -68,6 +72,7 @@ export class SuppliersController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete supplier' })
   @Delete(':id')
   @Roles('ADMIN', 'PHARMACIST')
   deleteSupplier(

@@ -11,7 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,11 +30,13 @@ export class PatientsController {
     private readonly patientsService: PatientsService,
   ) {}
 
+  @ApiOperation({ summary: 'List patients' })
   @Get()
   getPatients() {
     return this.patientsService.getPatients();
   }
 
+  @ApiOperation({ summary: 'Get patient by ID' })
   @Get(':id')
   getPatientById(
     @Param('id', ParseIntPipe) id: number,
@@ -42,6 +44,7 @@ export class PatientsController {
     return this.patientsService.getPatientById(id);
   }
 
+  @ApiOperation({ summary: 'Create patient' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   createPatient(
@@ -54,6 +57,7 @@ export class PatientsController {
     );
   }
 
+  @ApiOperation({ summary: 'Update patient' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST', 'CASHIER')
   updatePatient(
@@ -68,6 +72,7 @@ export class PatientsController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete patient' })
   @Delete(':id')
   @Roles('ADMIN')
   deletePatient(

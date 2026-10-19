@@ -11,7 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,11 +30,13 @@ export class InventoryController {
     private readonly inventoryService: InventoryService,
   ) {}
 
+  @ApiOperation({ summary: 'List inventory batches' })
   @Get()
   getBatches() {
     return this.inventoryService.getBatches();
   }
 
+  @ApiOperation({ summary: 'Get inventory batch by ID' })
   @Get(':id')
   getBatchById(
     @Param('id', ParseIntPipe) id: number,
@@ -42,6 +44,7 @@ export class InventoryController {
     return this.inventoryService.getBatchById(id);
   }
 
+  @ApiOperation({ summary: 'Create inventory batch' })
   @Post()
   @Roles('ADMIN', 'PHARMACIST')
   createBatch(
@@ -54,6 +57,7 @@ export class InventoryController {
     );
   }
 
+  @ApiOperation({ summary: 'Update inventory batch' })
   @Put(':id')
   @Roles('ADMIN', 'PHARMACIST')
   updateBatch(
@@ -68,6 +72,7 @@ export class InventoryController {
     );
   }
 
+  @ApiOperation({ summary: 'Delete inventory batch' })
   @Delete(':id')
   @Roles('ADMIN', 'PHARMACIST')
   deleteBatch(
