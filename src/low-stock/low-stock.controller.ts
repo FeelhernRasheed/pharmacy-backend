@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -23,9 +24,20 @@ export class LowStockController {
   getLowStock(
     @Query('threshold') threshold?: string,
   ) {
-    const stockThreshold = threshold
-      ? Number(threshold)
-      : 20;
+    let stockThreshold = 20;
+
+    if (threshold !== undefined) {
+      stockThreshold = Number(threshold);
+
+      if (
+        !Number.isInteger(stockThreshold) ||
+        stockThreshold < 0
+      ) {
+        throw new BadRequestException(
+          'threshold must be a non-negative integer',
+        );
+      }
+    }
 
     return this.lowStockService.getLowStock(
       stockThreshold,

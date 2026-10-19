@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class CreateMedicineDto {
@@ -17,5 +18,6 @@ export class CreateMedicineDto {
   strength: string;
 
   @IsInt()
+  @Min(1)
   category_id: number;
 }

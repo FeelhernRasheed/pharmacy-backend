@@ -1,6 +1,6 @@
 import {
+  IsIn,
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Min,
@@ -12,16 +12,10 @@ export class CreatePrescriptionDto {
   patient_id: number;
 
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  prescribed_by?: number;
-
-  @IsOptional()
   @IsString()
   notes?: string;
 
   @IsOptional()
-  @IsString()
-  @IsNotEmpty()
+  @IsIn(['PENDING'])
   status?: string;
 }

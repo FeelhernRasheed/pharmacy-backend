@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -11,7 +12,6 @@ export class UpdatePurchaseDto {
   invoice_number?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(20)
+  @IsIn(['PENDING', 'COMPLETED', 'CANCELLED'])
   status?: string;
 }

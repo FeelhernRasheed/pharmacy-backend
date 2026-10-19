@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,6 +13,15 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  app.useGlobalFilters(new AllExceptionsFilter());
+
+  app.enableCors({
+    origin:
+      process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()) ??
+      true,
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
   .setTitle('Pharmacy Management System API')

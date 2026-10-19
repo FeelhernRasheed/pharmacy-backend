@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -28,7 +29,20 @@ export class ExpiryManagementController {
   getExpiringSoon(
     @Query('days') days?: string,
   ) {
-    const numberOfDays = days ? Number(days) : 30;
+    let numberOfDays = 30;
+
+    if (days !== undefined) {
+      numberOfDays = Number(days);
+
+      if (
+        !Number.isInteger(numberOfDays) ||
+        numberOfDays < 0
+      ) {
+        throw new BadRequestException(
+          'days must be a non-negative integer',
+        );
+      }
+    }
 
     return this.expiryManagementService.getExpiringSoon(
       numberOfDays,
