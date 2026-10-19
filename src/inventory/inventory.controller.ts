@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { UpdateBatchDto } from './dto/update-batch.dto';
@@ -22,7 +24,7 @@ import { InventoryService } from './inventory.service';
 @ApiTags('Inventory')
 @ApiBearerAuth('bearer')
 @Controller('inventory')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class InventoryController {
   constructor(
     private readonly inventoryService: InventoryService,
@@ -41,6 +43,7 @@ export class InventoryController {
   }
 
   @Post()
+  @Roles('ADMIN', 'PHARMACIST')
   createBatch(
     @Body() createBatchDto: CreateBatchDto,
     @Request() request: any,
@@ -52,6 +55,7 @@ export class InventoryController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   updateBatch(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateBatchDto: UpdateBatchDto,
@@ -65,6 +69,7 @@ export class InventoryController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'PHARMACIST')
   deleteBatch(
     @Param('id', ParseIntPipe) id: number,
     @Request() request: any,

@@ -70,7 +70,8 @@ export class SaleItemsService {
         `SELECT
            id,
            quantity,
-           selling_price
+           selling_price,
+           expiry_date::text AS expiry_date
          FROM medicine_batches
          WHERE id = $1
          FOR UPDATE`,
@@ -79,6 +80,25 @@ export class SaleItemsService {
 
       if (batch.rows.length === 0) {
         throw new NotFoundException('Medicine batch not found');
+      }
+
+      const expiryDate = String(
+        batch.rows[0].expiry_date ?? '',
+      ).slice(0, 10);
+
+      const todayResult = await client.query(
+        `SELECT CURRENT_DATE::text AS today`,
+      );
+
+      const today = todayResult.rows[0].today as string;
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) ||
+        expiryDate < today
+      ) {
+        throw new BadRequestException(
+          'Cannot sell expired medicine',
+        );
       }
 
       const availableQuantity = Number(
