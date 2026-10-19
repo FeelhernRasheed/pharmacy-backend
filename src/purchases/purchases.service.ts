@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +10,12 @@ import { DatabaseService } from '../database/database.service';
 
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
+
+const ALLOWED_PURCHASE_STATUSES = [
+  'PENDING',
+  'COMPLETED',
+  'CANCELLED',
+];
 
 @Injectable()
 export class PurchasesService {
@@ -126,6 +134,15 @@ export class PurchasesService {
       status,
     } = updatePurchaseDto;
 
+    if (
+      status &&
+      !ALLOWED_PURCHASE_STATUSES.includes(status)
+    ) {
+      throw new BadRequestException(
+        `Invalid purchase status. Allowed statuses: ${ALLOWED_PURCHASE_STATUSES.join(', ')}`,
+      );
+    }
+
     const result = await this.databaseService
       .getPool()
       .query(
@@ -164,6 +181,20 @@ export class PurchasesService {
     id: number,
     actorUserId?: number,
   ) {
+    const itemsResult =
+      await this.databaseService
+        .getPool()
+        .query(
+          'SELECT COUNT(*) AS item_count FROM purchase_items WHERE purchase_id = $1',
+          [id],
+        );
+
+    if (Number(itemsResult.rows[0].item_count) > 0) {
+      throw new ConflictException(
+        'Cannot delete a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
+      );
+    }
+
     const result = await this.databaseService
       .getPool()
       .query(

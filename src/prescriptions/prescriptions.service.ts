@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -110,6 +111,12 @@ export class PrescriptionsService {
       notes,
       status,
     } = createPrescriptionDto;
+
+    if (status && status !== 'PENDING') {
+      throw new BadRequestException(
+        'New prescriptions must start with status PENDING',
+      );
+    }
 
     const patientResult = await this.databaseService
       .getPool()

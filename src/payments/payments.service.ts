@@ -91,63 +91,84 @@ export class PaymentsService {
     } = createPaymentDto;
 
     const pool = this.databaseService.getPool();
+    const client = await pool.connect();
 
-    const sale = await pool.query(
-      `SELECT
-         id,
-         total_amount
-       FROM sales
-       WHERE id = $1`,
-      [sale_id],
-    );
+    let createdPayment: Record<string, any>;
 
-    if (sale.rows.length === 0) {
-      throw new NotFoundException('Sale not found');
-    }
+    try {
+      await client.query('BEGIN');
 
-    const totalAmount = Number(
-      sale.rows[0].total_amount,
-    );
-
-    const payments = await pool.query(
-      `SELECT
-         COALESCE(SUM(amount), 0) AS paid_amount
-       FROM payments
-       WHERE sale_id = $1
-         AND status = 'COMPLETED'`,
-      [sale_id],
-    );
-
-    const paidAmount = Number(
-      payments.rows[0].paid_amount,
-    );
-
-    const remainingAmount =
-      totalAmount - paidAmount;
-
-    if (amount > remainingAmount) {
-      throw new BadRequestException(
-        `Payment exceeds remaining balance. Remaining amount: ${remainingAmount.toFixed(2)}`,
+      const sale = await client.query(
+        `SELECT
+           id,
+           total_amount,
+           status
+         FROM sales
+         WHERE id = $1
+         FOR UPDATE`,
+        [sale_id],
       );
+
+      if (sale.rows.length === 0) {
+        throw new NotFoundException('Sale not found');
+      }
+
+      if (sale.rows[0].status === 'CANCELLED') {
+        throw new BadRequestException(
+          'Cannot record a payment for a cancelled sale',
+        );
+      }
+
+      const totalAmount = Number(
+        sale.rows[0].total_amount,
+      );
+
+      const payments = await client.query(
+        `SELECT
+           COALESCE(SUM(amount), 0) AS paid_amount
+         FROM payments
+         WHERE sale_id = $1
+           AND status = 'COMPLETED'`,
+        [sale_id],
+      );
+
+      const paidAmount = Number(
+        payments.rows[0].paid_amount,
+      );
+
+      const remainingAmount = totalAmount - paidAmount;
+
+      if (amount > remainingAmount) {
+        throw new BadRequestException(
+          `Payment exceeds remaining balance. Remaining amount: ${remainingAmount.toFixed(2)}`,
+        );
+      }
+
+      const result = await client.query(
+        `INSERT INTO payments
+         (
+           sale_id,
+           amount,
+           payment_method
+         )
+         VALUES ($1, $2, $3)
+         RETURNING *`,
+        [
+          sale_id,
+          amount,
+          payment_method,
+        ],
+      );
+
+      createdPayment = result.rows[0];
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const result = await pool.query(
-      `INSERT INTO payments
-       (
-         sale_id,
-         amount,
-         payment_method
-       )
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [
-        sale_id,
-        amount,
-        payment_method,
-      ],
-    );
-
-    const createdPayment = result.rows[0];
 
     if (actorUserId) {
       await this.auditLogsService.createAuditLog(

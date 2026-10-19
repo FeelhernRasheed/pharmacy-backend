@@ -18,6 +18,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { UpdateSaleDto } from './dto/update-sale.dto';
 import { SalesService } from './sales.service';
 
 @ApiTags('Sales')
@@ -57,12 +58,12 @@ export class SalesController {
   @Roles('ADMIN', 'PHARMACIST')
   updateSale(
     @Param('id', ParseIntPipe) id: number,
-    @Body('status') status: string,
+    @Body() updateSaleDto: UpdateSaleDto,
     @Req() req: any,
   ) {
     return this.salesService.updateSale(
       id,
-      status,
+      updateSaleDto.status,
       req.user.userId,
     );
   }

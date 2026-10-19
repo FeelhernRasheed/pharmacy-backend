@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -63,12 +64,18 @@ export class PurchaseItemsService {
       await client.query('BEGIN');
 
       const purchase = await client.query(
-        'SELECT id FROM purchases WHERE id = $1',
+        'SELECT id, status FROM purchases WHERE id = $1 FOR UPDATE',
         [purchase_id],
       );
 
       if (purchase.rows.length === 0) {
         throw new NotFoundException('Purchase not found');
+      }
+
+      if (purchase.rows[0].status === 'CANCELLED') {
+        throw new BadRequestException(
+          'Cannot add items to a cancelled purchase',
+        );
       }
 
       const medicine = await client.query(
@@ -78,6 +85,23 @@ export class PurchaseItemsService {
 
       if (medicine.rows.length === 0) {
         throw new NotFoundException('Medicine not found');
+      }
+
+      const expiryDate = String(expiry_date).slice(0, 10);
+
+      const todayResult = await client.query(
+        `SELECT CURRENT_DATE::text AS today`,
+      );
+
+      const today = todayResult.rows[0].today as string;
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) ||
+        expiryDate < today
+      ) {
+        throw new BadRequestException(
+          'Cannot receive a batch with an expiry date in the past',
+        );
       }
 
       const subtotal = quantity * buying_price;

@@ -4,12 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateSaleItemDto } from './dto/create-sale-item.dto';
 
 @Injectable()
 export class SaleItemsService {
   constructor(
     private readonly databaseService: DatabaseService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async getSaleItems(saleId: number) {
@@ -59,12 +61,18 @@ export class SaleItemsService {
       await client.query('BEGIN');
 
       const sale = await client.query(
-        'SELECT id FROM sales WHERE id = $1',
+        'SELECT id, status FROM sales WHERE id = $1 FOR UPDATE',
         [sale_id],
       );
 
       if (sale.rows.length === 0) {
         throw new NotFoundException('Sale not found');
+      }
+
+      if (sale.rows[0].status === 'CANCELLED') {
+        throw new BadRequestException(
+          'Cannot add items to a cancelled sale',
+        );
       }
 
       const batch = await client.query(
@@ -152,9 +160,21 @@ export class SaleItemsService {
         [sale_id],
       );
 
+      const createdItem = result.rows[0];
+
       await client.query('COMMIT');
 
-      return result.rows[0];
+      if (actorUserId) {
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'SALE_ITEMS',
+          createdItem.id,
+          `Created sale item: ${createdItem.id} for sale: ${sale_id}`,
+        );
+      }
+
+      return createdItem;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
