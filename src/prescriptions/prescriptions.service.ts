@@ -219,7 +219,7 @@ export class PrescriptionsService {
       await this.databaseService
         .getPool()
         .query(
-          `SELECT id
+          `SELECT id, status
            FROM prescriptions
            WHERE id = $1`,
           [prescription_id],
@@ -228,6 +228,12 @@ export class PrescriptionsService {
     if (prescriptionResult.rows.length === 0) {
       throw new NotFoundException(
         'Prescription not found',
+      );
+    }
+
+    if (prescriptionResult.rows[0].status === 'COMPLETED') {
+      throw new BadRequestException(
+        'Cannot add items to a completed prescription',
       );
     }
 

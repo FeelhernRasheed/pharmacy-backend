@@ -12,6 +12,14 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+// Mirrors the handling in InventoryService: the pre-insert uniqueness
+// check cannot close the race window, so the database constraint
+// (users_username_key) is the authority and its violation is translated
+// to the same 409 the sequential path returns.
+function isUniqueViolation(error: any): boolean {
+  return error?.code === '23505';
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -93,34 +101,45 @@ export class UsersService {
       10,
     );
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO users
-         (
-           full_name,
-           username,
-           password_hash,
-           role
-         )
-         VALUES ($1, $2, $3, $4)
-         RETURNING
-           id,
-           full_name,
-           username,
-           role,
-           status,
-           created_at,
-           updated_at`,
-        [
-          full_name,
-          username,
-          passwordHash,
-          role,
-        ],
-      );
+    let createdUser: Record<string, any>;
 
-    const createdUser = result.rows[0];
+    try {
+      const result = await this.databaseService
+        .getPool()
+        .query(
+          `INSERT INTO users
+           (
+             full_name,
+             username,
+             password_hash,
+             role
+           )
+           VALUES ($1, $2, $3, $4)
+           RETURNING
+             id,
+             full_name,
+             username,
+             role,
+             status,
+             created_at,
+             updated_at`,
+          [
+            full_name,
+            username,
+            passwordHash,
+            role,
+          ],
+        );
+
+      createdUser = result.rows[0];
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          'Username already exists',
+        );
+      }
+      throw error;
+    }
 
     await this.auditLogsService.createAuditLog(
       actorUserId,
@@ -187,37 +206,48 @@ export class UsersService {
       );
     }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `UPDATE users
-         SET
-           full_name = COALESCE($1, full_name),
-           username = COALESCE($2, username),
-           password_hash = COALESCE($3, password_hash),
-           role = COALESCE($4, role),
-           status = COALESCE($5, status),
-           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $6
-         RETURNING
-           id,
-           full_name,
-           username,
-           role,
-           status,
-           created_at,
-           updated_at`,
-        [
-          full_name ?? null,
-          username ?? null,
-          passwordHash,
-          role ?? null,
-          status ?? null,
-          id,
-        ],
-      );
+    let updatedUser: Record<string, any>;
 
-    const updatedUser = result.rows[0];
+    try {
+      const result = await this.databaseService
+        .getPool()
+        .query(
+          `UPDATE users
+           SET
+             full_name = COALESCE($1, full_name),
+             username = COALESCE($2, username),
+             password_hash = COALESCE($3, password_hash),
+             role = COALESCE($4, role),
+             status = COALESCE($5, status),
+             updated_at = CURRENT_TIMESTAMP
+           WHERE id = $6
+           RETURNING
+             id,
+             full_name,
+             username,
+             role,
+             status,
+             created_at,
+             updated_at`,
+          [
+            full_name ?? null,
+            username ?? null,
+            passwordHash,
+            role ?? null,
+            status ?? null,
+            id,
+          ],
+        );
+
+      updatedUser = result.rows[0];
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          'Username already exists',
+        );
+      }
+      throw error;
+    }
 
     await this.auditLogsService.createAuditLog(
       actorUserId,

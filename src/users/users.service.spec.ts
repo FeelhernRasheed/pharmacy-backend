@@ -86,6 +86,31 @@ describe('UsersService', () => {
         ConflictException,
       );
     });
+
+    it('translates a concurrent duplicate-username race into 409', async () => {
+      queryMock
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce({ code: '23505' });
+
+      await expect(service.createUser(dto, 1)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(auditMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUser', () => {
+    it('translates a unique violation on rename into 409', async () => {
+      queryMock
+        .mockResolvedValueOnce({ rows: [{ id: 2 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce({ code: '23505' });
+
+      await expect(
+        service.updateUser(2, { username: 'taken' }, 1),
+      ).rejects.toThrow(ConflictException);
+      expect(auditMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('getUserById', () => {
