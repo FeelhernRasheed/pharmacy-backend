@@ -9,6 +9,13 @@ import { DatabaseService } from '../database/database.service';
 
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
+// Amounts are stored as numeric(12,2); comparing them as IEEE
+// floats can reject a valid final payment (e.g. 0.30 - 0.10 leaves
+// 0.1999...). Money comparisons are therefore done in integer cents.
+function toCents(value: number): number {
+  return Math.round(value * 100);
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -138,7 +145,7 @@ export class PaymentsService {
 
       const remainingAmount = totalAmount - paidAmount;
 
-      if (amount > remainingAmount) {
+      if (toCents(amount) > toCents(remainingAmount)) {
         throw new BadRequestException(
           `Payment exceeds remaining balance. Remaining amount: ${remainingAmount.toFixed(2)}`,
         );

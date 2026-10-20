@@ -143,9 +143,40 @@ export class PurchasesService {
       );
     }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
+    const pool = this.databaseService.getPool();
+    const client = await pool.connect();
+
+    let updatedPurchase: Record<string, any>;
+
+    try {
+      await client.query('BEGIN');
+
+      // Lock the purchase so a concurrent createPurchaseItem
+      // (which also locks the purchase) cannot add stock between
+      // the cancellation check and the status update.
+      const purchaseResult = await client.query(
+        'SELECT id, status FROM purchases WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+
+      if (purchaseResult.rows.length === 0) {
+        throw new NotFoundException('Purchase not found');
+      }
+
+      if (status === 'CANCELLED') {
+        const itemsResult = await client.query(
+          'SELECT COUNT(*) AS item_count FROM purchase_items WHERE purchase_id = $1',
+          [id],
+        );
+
+        if (Number(itemsResult.rows[0].item_count) > 0) {
+          throw new ConflictException(
+            'Cannot cancel a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
+          );
+        }
+      }
+
+      const updateResult = await client.query(
         `UPDATE purchases
          SET invoice_number = COALESCE($1, invoice_number),
              status = COALESCE($2, status)
@@ -158,11 +189,15 @@ export class PurchasesService {
         ],
       );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Purchase not found');
-    }
+      updatedPurchase = updateResult.rows[0];
 
-    const updatedPurchase = result.rows[0];
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     if (actorUserId) {
       await this.auditLogsService.createAuditLog(

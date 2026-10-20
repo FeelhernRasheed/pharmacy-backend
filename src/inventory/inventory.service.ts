@@ -195,6 +195,28 @@ export class InventoryService {
       );
     }
 
+    if (expiry_date !== undefined) {
+      const expiryDate = String(expiry_date).slice(0, 10);
+
+      const todayResult = await this.databaseService
+        .getPool()
+        .query(`SELECT CURRENT_DATE::text AS today`);
+
+      const today = todayResult.rows[0].today as string;
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+        throw new BadRequestException(
+          'expiry_date must be a valid date',
+        );
+      }
+
+      if (expiryDate < today) {
+        throw new BadRequestException(
+          'Cannot set an expiry date in the past',
+        );
+      }
+    }
+
     const previousQuantity = Number(
       existing.rows[0].quantity,
     );
