@@ -159,7 +159,7 @@ All errors follow a consistent shape:
 ## Testing
 
 ```bash
-# unit tests (46 suites, 133 tests; no database required — all DB access is mocked)
+# unit tests (46 suites, 138 tests; no database required — all DB access is mocked)
 npm test
 
 # coverage
