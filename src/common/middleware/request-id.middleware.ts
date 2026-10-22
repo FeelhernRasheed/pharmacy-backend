@@ -6,7 +6,7 @@ const REQUEST_ID_HEADER = 'X-Request-Id';
 // Accepted from the caller only when it looks like a sane
 // correlation token; anything else (too long, odd characters)
 // is replaced so logs cannot be poisoned via header values.
-const VALID_REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
+export const VALID_REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
 
 export type RequestWithId = Request & { id?: string };
 

@@ -5,6 +5,19 @@ import {
 
 import { DatabaseService } from '../database/database.service';
 
+/**
+ * Minimal query surface needed to persist an audit log. Both the
+ * connection pool and a transaction client satisfy it, so a caller can
+ * write the audit row inside its own transaction and make the audit
+ * log and the business change commit (or roll back) together.
+ */
+export interface AuditLogExecutor {
+  query(
+    queryText: string,
+    values?: unknown[],
+  ): Promise<{ rows: any[] }>;
+}
+
 @Injectable()
 export class AuditLogsService {
   constructor(
@@ -72,11 +85,13 @@ export class AuditLogsService {
     module: string,
     recordId: number | null,
     description: string,
+    executor?: AuditLogExecutor,
   ) {
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO audit_logs
+    const target: AuditLogExecutor =
+      executor ?? this.databaseService.getPool();
+
+    const result = await target.query(
+      `INSERT INTO audit_logs
          (
            user_id,
            action,
@@ -93,14 +108,14 @@ export class AuditLogsService {
            record_id,
            description,
            created_at`,
-        [
-          userId,
-          action,
-          module,
-          recordId,
-          description,
-        ],
-      );
+      [
+        userId,
+        action,
+        module,
+        recordId,
+        description,
+      ],
+    );
 
     return result.rows[0];
   }

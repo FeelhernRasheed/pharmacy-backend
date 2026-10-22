@@ -82,46 +82,47 @@ export class PurchasesService {
       invoice_number,
     } = createPurchaseDto;
 
-    const supplier = await this.databaseService
-      .getPool()
-      .query(
-        'SELECT id FROM suppliers WHERE id = $1',
-        [supplier_id],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const supplier = await client.query(
+          'SELECT id FROM suppliers WHERE id = $1',
+          [supplier_id],
+        );
 
-    if (supplier.rows.length === 0) {
-      throw new NotFoundException('Supplier not found');
-    }
+        if (supplier.rows.length === 0) {
+          throw new NotFoundException('Supplier not found');
+        }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO purchases
-         (
-           supplier_id,
-           invoice_number
-         )
-         VALUES ($1, $2)
-         RETURNING *`,
-        [
-          supplier_id,
-          invoice_number ?? null,
-        ],
-      );
+        const result = await client.query(
+          `INSERT INTO purchases
+           (
+             supplier_id,
+             invoice_number
+           )
+           VALUES ($1, $2)
+           RETURNING *`,
+          [
+            supplier_id,
+            invoice_number ?? null,
+          ],
+        );
 
-    const createdPurchase = result.rows[0];
+        const createdPurchase = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'PURCHASES',
-        createdPurchase.id,
-        `Created purchase: ${createdPurchase.invoice_number ?? createdPurchase.id}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'CREATE',
+            'PURCHASES',
+            createdPurchase.id,
+            `Created purchase: ${createdPurchase.invoice_number ?? createdPurchase.id}`,
+            client,
+          );
+        }
 
-    return createdPurchase;
+        return createdPurchase;
+      },
+    );
   }
 
   async updatePurchase(
@@ -143,27 +144,70 @@ export class PurchasesService {
       );
     }
 
-    const pool = this.databaseService.getPool();
-    const client = await pool.connect();
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        // Lock the purchase so a concurrent createPurchaseItem
+        // (which also locks the purchase) cannot add stock between
+        // the cancellation check and the status update.
+        const purchaseResult = await client.query(
+          'SELECT id, status FROM purchases WHERE id = $1 FOR UPDATE',
+          [id],
+        );
 
-    let updatedPurchase: Record<string, any>;
+        if (purchaseResult.rows.length === 0) {
+          throw new NotFoundException('Purchase not found');
+        }
 
-    try {
-      await client.query('BEGIN');
+        if (status === 'CANCELLED') {
+          const itemsResult = await client.query(
+            'SELECT COUNT(*) AS item_count FROM purchase_items WHERE purchase_id = $1',
+            [id],
+          );
 
-      // Lock the purchase so a concurrent createPurchaseItem
-      // (which also locks the purchase) cannot add stock between
-      // the cancellation check and the status update.
-      const purchaseResult = await client.query(
-        'SELECT id, status FROM purchases WHERE id = $1 FOR UPDATE',
-        [id],
-      );
+          if (Number(itemsResult.rows[0].item_count) > 0) {
+            throw new ConflictException(
+              'Cannot cancel a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
+            );
+          }
+        }
 
-      if (purchaseResult.rows.length === 0) {
-        throw new NotFoundException('Purchase not found');
-      }
+        const updateResult = await client.query(
+          `UPDATE purchases
+           SET invoice_number = COALESCE($1, invoice_number),
+               status = COALESCE($2, status)
+           WHERE id = $3
+           RETURNING *`,
+          [
+            invoice_number ?? null,
+            status ?? null,
+            id,
+          ],
+        );
 
-      if (status === 'CANCELLED') {
+        const updatedPurchase = updateResult.rows[0];
+
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'UPDATE',
+            'PURCHASES',
+            updatedPurchase.id,
+            `Updated purchase: ${updatedPurchase.invoice_number ?? updatedPurchase.id}`,
+            client,
+          );
+        }
+
+        return updatedPurchase;
+      },
+    );
+  }
+
+  async deletePurchase(
+    id: number,
+    actorUserId?: number,
+  ) {
+    return this.databaseService.runInTransaction(
+      async (client) => {
         const itemsResult = await client.query(
           'SELECT COUNT(*) AS item_count FROM purchase_items WHERE purchase_id = $1',
           [id],
@@ -171,93 +215,39 @@ export class PurchasesService {
 
         if (Number(itemsResult.rows[0].item_count) > 0) {
           throw new ConflictException(
-            'Cannot cancel a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
+            'Cannot delete a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
           );
         }
-      }
 
-      const updateResult = await client.query(
-        `UPDATE purchases
-         SET invoice_number = COALESCE($1, invoice_number),
-             status = COALESCE($2, status)
-         WHERE id = $3
-         RETURNING *`,
-        [
-          invoice_number ?? null,
-          status ?? null,
-          id,
-        ],
-      );
-
-      updatedPurchase = updateResult.rows[0];
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'UPDATE',
-        'PURCHASES',
-        updatedPurchase.id,
-        `Updated purchase: ${updatedPurchase.invoice_number ?? updatedPurchase.id}`,
-      );
-    }
-
-    return updatedPurchase;
-  }
-
-  async deletePurchase(
-    id: number,
-    actorUserId?: number,
-  ) {
-    const itemsResult =
-      await this.databaseService
-        .getPool()
-        .query(
-          'SELECT COUNT(*) AS item_count FROM purchase_items WHERE purchase_id = $1',
+        const result = await client.query(
+          `DELETE FROM purchases
+           WHERE id = $1
+           RETURNING *`,
           [id],
         );
 
-    if (Number(itemsResult.rows[0].item_count) > 0) {
-      throw new ConflictException(
-        'Cannot delete a purchase that has items. Stock already received from this purchase cannot be reverted automatically.',
-      );
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Purchase not found');
+        }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `DELETE FROM purchases
-         WHERE id = $1
-         RETURNING *`,
-        [id],
-      );
+        const deletedPurchase = result.rows[0];
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Purchase not found');
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'DELETE',
+            'PURCHASES',
+            deletedPurchase.id,
+            `Deleted purchase: ${deletedPurchase.invoice_number ?? deletedPurchase.id}`,
+            client,
+          );
+        }
 
-    const deletedPurchase = result.rows[0];
-
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'DELETE',
-        'PURCHASES',
-        deletedPurchase.id,
-        `Deleted purchase: ${deletedPurchase.invoice_number ?? deletedPurchase.id}`,
-      );
-    }
-
-    return {
-      message: 'Purchase deleted successfully',
-      purchase: deletedPurchase,
-    };
+        return {
+          message: 'Purchase deleted successfully',
+          purchase: deletedPurchase,
+        };
+      },
+    );
   }
 }

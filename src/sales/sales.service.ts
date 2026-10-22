@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PoolClient } from 'pg';
 
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
@@ -67,49 +68,52 @@ export class SalesService {
   async createSale(
     createSaleDto: CreateSaleDto,
     actorUserId?: number,
+    executor?: PoolClient,
   ) {
     const { patient_id } = createSaleDto;
 
-    if (patient_id) {
-      const patient = await this.databaseService
-        .getPool()
-        .query(
-          'SELECT id FROM patients WHERE id = $1',
-          [patient_id],
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        if (patient_id) {
+          const patient = await client.query(
+            'SELECT id FROM patients WHERE id = $1',
+            [patient_id],
+          );
+
+          if (patient.rows.length === 0) {
+            throw new NotFoundException('Patient not found');
+          }
+        }
+
+        const result = await client.query(
+          `INSERT INTO sales
+           (
+             patient_id
+           )
+           VALUES ($1)
+           RETURNING *`,
+          [
+            patient_id ?? null,
+          ],
         );
 
-      if (patient.rows.length === 0) {
-        throw new NotFoundException('Patient not found');
-      }
-    }
+        const createdSale = result.rows[0];
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO sales
-         (
-           patient_id
-         )
-         VALUES ($1)
-         RETURNING *`,
-        [
-          patient_id ?? null,
-        ],
-      );
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'CREATE',
+            'SALES',
+            createdSale.id,
+            `Created sale: ${createdSale.id}`,
+            client,
+          );
+        }
 
-    const createdSale = result.rows[0];
-
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'SALES',
-        createdSale.id,
-        `Created sale: ${createdSale.id}`,
-      );
-    }
-
-    return createdSale;
+        return createdSale;
+      },
+      executor,
+    );
   }
 
   async updateSale(
@@ -129,139 +133,128 @@ export class SalesService {
       );
     }
 
-    const pool = this.databaseService.getPool();
-    const client = await pool.connect();
-
-    let updatedSale: Record<string, any>;
-
-    try {
-      await client.query('BEGIN');
-
-      const saleResult = await client.query(
-        'SELECT id, status FROM sales WHERE id = $1 FOR UPDATE',
-        [id],
-      );
-
-      if (saleResult.rows.length === 0) {
-        throw new NotFoundException('Sale not found');
-      }
-
-      const sale = saleResult.rows[0];
-
-      if (sale.status === 'CANCELLED') {
-        throw new ConflictException(
-          'A cancelled sale cannot be reopened',
-        );
-      }
-
-      if (status === 'CANCELLED') {
-        const paymentsResult = await client.query(
-          `SELECT COUNT(*) AS payment_count
-           FROM payments
-           WHERE sale_id = $1 AND status = 'COMPLETED'`,
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const saleResult = await client.query(
+          'SELECT id, status FROM sales WHERE id = $1 FOR UPDATE',
           [id],
         );
 
-        if (Number(paymentsResult.rows[0].payment_count) > 0) {
+        if (saleResult.rows.length === 0) {
+          throw new NotFoundException('Sale not found');
+        }
+
+        const sale = saleResult.rows[0];
+
+        if (sale.status === 'CANCELLED') {
           throw new ConflictException(
-            'Cannot cancel a sale that has completed payments',
+            'A cancelled sale cannot be reopened',
           );
         }
 
-        await client.query(
-          `UPDATE medicine_batches mb
-           SET quantity = mb.quantity + si.quantity
-           FROM sale_items si
-           WHERE si.batch_id = mb.id
-             AND si.sale_id = $1`,
-          [id],
+        if (status === 'CANCELLED') {
+          const paymentsResult = await client.query(
+            `SELECT COUNT(*) AS payment_count
+             FROM payments
+             WHERE sale_id = $1 AND status = 'COMPLETED'`,
+            [id],
+          );
+
+          if (Number(paymentsResult.rows[0].payment_count) > 0) {
+            throw new ConflictException(
+              'Cannot cancel a sale that has completed payments',
+            );
+          }
+
+          await client.query(
+            `UPDATE medicine_batches mb
+             SET quantity = mb.quantity + si.quantity
+             FROM sale_items si
+             WHERE si.batch_id = mb.id
+               AND si.sale_id = $1`,
+            [id],
+          );
+        }
+
+        const updateResult = await client.query(
+          `UPDATE sales
+           SET status = COALESCE($1, status)
+           WHERE id = $2
+           RETURNING *`,
+          [status ?? null, id],
         );
-      }
 
-      const updateResult = await client.query(
-        `UPDATE sales
-         SET status = COALESCE($1, status)
-         WHERE id = $2
-         RETURNING *`,
-        [status ?? null, id],
-      );
+        const updatedSale = updateResult.rows[0];
 
-      updatedSale = updateResult.rows[0];
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'UPDATE',
+            'SALES',
+            updatedSale.id,
+            `Updated sale: ${updatedSale.id} status to ${updatedSale.status}`,
+            client,
+          );
+        }
 
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'UPDATE',
-        'SALES',
-        updatedSale.id,
-        `Updated sale: ${updatedSale.id} status to ${updatedSale.status}`,
-      );
-    }
-
-    return updatedSale;
+        return updatedSale;
+      },
+    );
   }
 
   async deleteSale(
     id: number,
     actorUserId?: number,
   ) {
-    const references =
-      await this.databaseService
-        .getPool()
-        .query(
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const references = await client.query(
           `SELECT
              (SELECT COUNT(*) FROM sale_items WHERE sale_id = $1) AS sale_items,
              (SELECT COUNT(*) FROM payments WHERE sale_id = $1) AS payments`,
           [id],
         );
 
-    const ref = references.rows[0];
+        const ref = references.rows[0];
 
-    if (
-      Number(ref.sale_items) > 0 ||
-      Number(ref.payments) > 0
-    ) {
-      throw new ConflictException(
-        'Cannot delete a sale that has sale items or payments. Cancel the sale instead.',
-      );
-    }
+        if (
+          Number(ref.sale_items) > 0 ||
+          Number(ref.payments) > 0
+        ) {
+          throw new ConflictException(
+            'Cannot delete a sale that has sale items or payments. Cancel the sale instead.',
+          );
+        }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `DELETE FROM sales
-         WHERE id = $1
-         RETURNING *`,
-        [id],
-      );
+        const result = await client.query(
+          `DELETE FROM sales
+           WHERE id = $1
+           RETURNING *`,
+          [id],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Sale not found');
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Sale not found');
+        }
 
-    const deletedSale = result.rows[0];
+        const deletedSale = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'DELETE',
-        'SALES',
-        deletedSale.id,
-        `Deleted sale: ${deletedSale.id}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'DELETE',
+            'SALES',
+            deletedSale.id,
+            `Deleted sale: ${deletedSale.id}`,
+            client,
+          );
+        }
 
-    return {
-      message: 'Sale deleted successfully',
-      sale: deletedSale,
-    };
+        return {
+          message: 'Sale deleted successfully',
+          sale: deletedSale,
+        };
+      },
+    );
   }
 }

@@ -102,71 +102,66 @@ export class StockAdjustmentsService {
       );
     }
 
-    const pool = this.databaseService.getPool();
-    const client = await pool.connect();
-
-    try {
-      await client.query('BEGIN');
-
-      // 1. Lock the batch row.
-      const batchResult = await client.query(
-        `SELECT
-           id,
-           medicine_id,
-           batch_number,
-           quantity,
-           expiry_date
-         FROM medicine_batches
-         WHERE id = $1
-         FOR UPDATE`,
-        [batch_id],
-      );
-
-      if (batchResult.rows.length === 0) {
-        throw new NotFoundException(
-          'Medicine batch not found',
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        // 1. Lock the batch row.
+        const batchResult = await client.query(
+          `SELECT
+             id,
+             medicine_id,
+             batch_number,
+             quantity,
+             expiry_date
+           FROM medicine_batches
+           WHERE id = $1
+           FOR UPDATE`,
+          [batch_id],
         );
-      }
 
-      const batch = batchResult.rows[0];
+        if (batchResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Medicine batch not found',
+          );
+        }
 
-      // 2. Check the authenticated user exists.
-      const userResult = await client.query(
-        `SELECT
-           id,
-           full_name,
-           role,
-           status
-         FROM users
-         WHERE id = $1`,
-        [actorUserId],
-      );
+        const batch = batchResult.rows[0];
 
-      if (userResult.rows.length === 0) {
-        throw new NotFoundException(
-          'Adjustment user not found',
+        // 2. Check the authenticated user exists.
+        const userResult = await client.query(
+          `SELECT
+             id,
+             full_name,
+             role,
+             status
+           FROM users
+           WHERE id = $1`,
+          [actorUserId],
         );
-      }
 
-      const user = userResult.rows[0];
+        if (userResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Adjustment user not found',
+          );
+        }
 
-      // 3. Only active users can make adjustments.
-      if (user.status !== 'ACTIVE') {
-        throw new BadRequestException(
-          'Adjustment user account is not active',
-        );
-      }
+        const user = userResult.rows[0];
 
-      // 4. Prevent removing more stock than exists.
-      if (quantity > batch.quantity) {
-        throw new BadRequestException(
-          `Adjustment quantity exceeds available stock. Available quantity: ${batch.quantity}`,
-        );
-      }
+        // 3. Only active users can make adjustments.
+        if (user.status !== 'ACTIVE') {
+          throw new BadRequestException(
+            'Adjustment user account is not active',
+          );
+        }
 
-      // 5. Reduce the batch quantity.
-      const updatedBatchResult =
-        await client.query(
+        // 4. Prevent removing more stock than exists.
+        if (quantity > batch.quantity) {
+          throw new BadRequestException(
+            `Adjustment quantity exceeds available stock. Available quantity: ${batch.quantity}`,
+          );
+        }
+
+        // 5. Reduce the batch quantity.
+        const updatedBatchResult = await client.query(
           `UPDATE medicine_batches
            SET quantity = quantity - $1
            WHERE id = $2
@@ -179,9 +174,8 @@ export class StockAdjustmentsService {
           [quantity, batch_id],
         );
 
-      // 6. Record the adjustment.
-      const adjustmentResult =
-        await client.query(
+        // 6. Record the adjustment.
+        const adjustmentResult = await client.query(
           `INSERT INTO stock_adjustments
            (
              batch_id,
@@ -209,31 +203,26 @@ export class StockAdjustmentsService {
           ],
         );
 
-      // 7. Commit the stock change and adjustment together.
-      await client.query('COMMIT');
+        const createdAdjustment =
+          adjustmentResult.rows[0];
 
-      const createdAdjustment =
-        adjustmentResult.rows[0];
+        // 7. The audit log belongs to the same transaction as the
+        //    stock change: either both are persisted or neither is.
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'STOCK_ADJUSTMENTS',
+          createdAdjustment.id,
+          `Created stock adjustment: ${createdAdjustment.id} for batch: ${batch_id}`,
+          client,
+        );
 
-      // 8. Create audit log after successful transaction.
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'STOCK_ADJUSTMENTS',
-        createdAdjustment.id,
-        `Created stock adjustment: ${createdAdjustment.id} for batch: ${batch_id}`,
-      );
-
-      return {
-        ...createdAdjustment,
-        remaining_batch_quantity:
-          updatedBatchResult.rows[0].quantity,
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+        return {
+          ...createdAdjustment,
+          remaining_batch_quantity:
+            updatedBatchResult.rows[0].quantity,
+        };
+      },
+    );
   }
 }

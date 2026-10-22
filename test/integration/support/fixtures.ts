@@ -9,6 +9,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../../../src/app.module';
 import { AllExceptionsFilter } from '../../../src/common/filters/all-exceptions.filter';
 import { requestIdMiddleware } from '../../../src/common/middleware/request-id.middleware';
+import { assertTestDatabaseTarget } from '../../support/test-database.env';
 
 // Mirrors the production bootstrap from src/main.ts (helmet options,
 // ValidationPipe, exception filter) so integration tests exercise the
@@ -55,9 +56,13 @@ export async function createTestApp(): Promise<INestApplication<App>> {
 }
 
 // Direct database access for state assertions and fixture cleanup.
-// Uses the same environment-driven configuration as the application,
-// which the test runner points at the isolated Docker test database.
+// The connection details come from DB_*, which the jest setup file
+// pins to the isolated test database (pharmacy_test) before the
+// application is imported — the values in `.env` describe the
+// development database and are never used here.
 export function createTestPool(): Pool {
+  assertTestDatabaseTarget();
+
   return new Pool({
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
@@ -240,15 +245,27 @@ export async function cleanupFixtureIds(
     ids.supplierIds,
   );
   await del('DELETE FROM users WHERE id = ANY($1)', ids.userIds);
-}
 
+  // Idempotency keys claimed by this run. They carry the run suffix,
+  // so only this run's rows are removed.
+  await pool.query(
+    'DELETE FROM idempotency_keys WHERE idempotency_key LIKE $1',
+    [`%${RUN_SUFFIX}%`],
+  );
+}
 // Reads a batch row directly from the database for state assertions.
 export async function getBatchState(
   pool: Pool,
   batchId: number,
-): Promise<{ quantity: number; expiry_date: string }> {
+): Promise<{
+  quantity: number;
+  expiry_date: string;
+  selling_price: number;
+}> {
   const result = await pool.query(
-    `SELECT quantity, expiry_date::text AS expiry_date
+    `SELECT quantity,
+            expiry_date::text AS expiry_date,
+            selling_price::text AS selling_price
      FROM medicine_batches
      WHERE id = $1`,
     [batchId],
@@ -256,8 +273,10 @@ export async function getBatchState(
   if (result.rows.length === 0) {
     throw new Error(`Batch ${batchId} not found`);
   }
+
   return {
     quantity: Number(result.rows[0].quantity),
     expiry_date: result.rows[0].expiry_date,
+    selling_price: Number(result.rows[0].selling_price),
   };
 }

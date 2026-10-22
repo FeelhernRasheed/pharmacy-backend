@@ -1,25 +1,29 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
+import { createDatabaseServiceMock } from '../../test/support/database-service.mock';
+import type { DatabaseServiceMock } from '../../test/support/database-service.mock';
+
 import { DatabaseService } from '../database/database.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrescriptionsService } from './prescriptions.service';
 
 describe('PrescriptionsService', () => {
   let service: PrescriptionsService;
+  let database: DatabaseServiceMock;
   let queryMock: jest.Mock;
   let auditMock: jest.Mock;
 
   beforeEach(async () => {
     queryMock = jest.fn();
     auditMock = jest.fn().mockResolvedValue(undefined);
+    database = createDatabaseServiceMock(queryMock);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PrescriptionsService,
         {
           provide: DatabaseService,
-          useValue: {
-            getPool: () => ({ query: queryMock }),
-          },
+          useValue: database.provider,
         },
         {
           provide: AuditLogsService,
@@ -57,6 +61,7 @@ describe('PrescriptionsService', () => {
 
       expect(queryMock).toHaveBeenCalledTimes(1);
       expect(auditMock).not.toHaveBeenCalled();
+      expect(database.transaction).toHaveBeenCalledWith('ROLLBACK');
     });
 
     it('still creates an item for a pending prescription', async () => {
@@ -87,7 +92,26 @@ describe('PrescriptionsService', () => {
         'PRESCRIPTION_ITEMS',
         9,
         expect.stringContaining('prescription: 5'),
+        database.client,
       );
+    });
+
+    it('rolls the item back when the audit log cannot be written', async () => {
+      queryMock
+        .mockResolvedValueOnce({
+          rows: [{ id: 5, status: 'PENDING' }],
+        })
+        .mockResolvedValueOnce({ rows: [{ id: 3 }] })
+        .mockResolvedValueOnce({ rows: [{ id: 9 }] });
+
+      auditMock.mockRejectedValueOnce(new Error('audit unavailable'));
+
+      await expect(
+        service.createPrescriptionItem(itemDto, 1),
+      ).rejects.toThrow('audit unavailable');
+
+      expect(database.transaction).toHaveBeenCalledWith('ROLLBACK');
+      expect(database.transaction).not.toHaveBeenCalledWith('COMMIT');
     });
 
     it('allows adding items while the prescription is partially dispensed', async () => {

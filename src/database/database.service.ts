@@ -4,7 +4,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 @Injectable()
 export class DatabaseService implements OnApplicationShutdown {
@@ -42,6 +42,42 @@ export class DatabaseService implements OnApplicationShutdown {
 
   getPool(): Pool {
     return this.pool;
+  }
+
+  /**
+   * Runs `work` inside a single database transaction.
+   *
+   * When `executor` is supplied the caller already owns an open
+   * transaction: the work runs on that client and no
+   * BEGIN/COMMIT/ROLLBACK is issued here, so the outer owner stays in
+   * charge of the commit. That is what allows a business change and
+   * its audit log to be written in one atomic unit.
+   */
+  async runInTransaction<T>(
+    work: (client: PoolClient) => Promise<T>,
+    executor?: PoolClient,
+  ): Promise<T> {
+    if (executor) {
+      return work(executor);
+    }
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const result = await work(client);
+
+      await client.query('COMMIT');
+
+      return result;
+    } catch (error) {
+      // A failing ROLLBACK must never mask the original error.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async testConnection(): Promise<boolean> {

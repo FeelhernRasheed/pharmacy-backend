@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PoolClient } from 'pg';
 
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
@@ -90,6 +91,7 @@ export class PaymentsService {
   async createPayment(
     createPaymentDto: CreatePaymentDto,
     actorUserId?: number,
+    executor?: PoolClient,
   ) {
     const {
       sale_id,
@@ -97,97 +99,87 @@ export class PaymentsService {
       payment_method,
     } = createPaymentDto;
 
-    const pool = this.databaseService.getPool();
-    const client = await pool.connect();
-
-    let createdPayment: Record<string, any>;
-
-    try {
-      await client.query('BEGIN');
-
-      const sale = await client.query(
-        `SELECT
-           id,
-           total_amount,
-           status
-         FROM sales
-         WHERE id = $1
-         FOR UPDATE`,
-        [sale_id],
-      );
-
-      if (sale.rows.length === 0) {
-        throw new NotFoundException('Sale not found');
-      }
-
-      if (sale.rows[0].status === 'CANCELLED') {
-        throw new BadRequestException(
-          'Cannot record a payment for a cancelled sale',
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const sale = await client.query(
+          `SELECT
+             id,
+             total_amount,
+             status
+           FROM sales
+           WHERE id = $1
+           FOR UPDATE`,
+          [sale_id],
         );
-      }
 
-      const totalAmount = Number(
-        sale.rows[0].total_amount,
-      );
+        if (sale.rows.length === 0) {
+          throw new NotFoundException('Sale not found');
+        }
 
-      const payments = await client.query(
-        `SELECT
-           COALESCE(SUM(amount), 0) AS paid_amount
-         FROM payments
-         WHERE sale_id = $1
-           AND status = 'COMPLETED'`,
-        [sale_id],
-      );
+        if (sale.rows[0].status === 'CANCELLED') {
+          throw new BadRequestException(
+            'Cannot record a payment for a cancelled sale',
+          );
+        }
 
-      const paidAmount = Number(
-        payments.rows[0].paid_amount,
-      );
-
-      const remainingAmount = totalAmount - paidAmount;
-
-      if (toCents(amount) > toCents(remainingAmount)) {
-        throw new BadRequestException(
-          `Payment exceeds remaining balance. Remaining amount: ${remainingAmount.toFixed(2)}`,
+        const totalAmount = Number(
+          sale.rows[0].total_amount,
         );
-      }
 
-      const result = await client.query(
-        `INSERT INTO payments
-         (
-           sale_id,
-           amount,
-           payment_method
-         )
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [
-          sale_id,
-          amount,
-          payment_method,
-        ],
-      );
+        const payments = await client.query(
+          `SELECT
+             COALESCE(SUM(amount), 0) AS paid_amount
+           FROM payments
+           WHERE sale_id = $1
+             AND status = 'COMPLETED'`,
+          [sale_id],
+        );
 
-      createdPayment = result.rows[0];
+        const paidAmount = Number(
+          payments.rows[0].paid_amount,
+        );
 
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+        const remainingAmount = totalAmount - paidAmount;
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'PAYMENTS',
-        createdPayment.id,
-        `Created payment: ${createdPayment.id} for sale: ${sale_id}`,
-      );
-    }
+        if (toCents(amount) > toCents(remainingAmount)) {
+          throw new BadRequestException(
+            `Payment exceeds remaining balance. Remaining amount: ${remainingAmount.toFixed(2)}`,
+          );
+        }
 
-    return createdPayment;
+        const result = await client.query(
+          `INSERT INTO payments
+           (
+             sale_id,
+             amount,
+             payment_method
+           )
+           VALUES ($1, $2, $3)
+           RETURNING *`,
+          [
+            sale_id,
+            amount,
+            payment_method,
+          ],
+        );
+
+        const createdPayment = result.rows[0];
+
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'CREATE',
+            'PAYMENTS',
+            createdPayment.id,
+            `Created payment: ${createdPayment.id} for sale: ${sale_id}`,
+            client,
+          );
+        }
+
+        return createdPayment;
+      },
+      executor,
+    );
   }
 
   async getPaymentsByStatus(status: string) {

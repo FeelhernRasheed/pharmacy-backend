@@ -71,35 +71,38 @@ export class MedicinesService {
       category_id,
     } = createMedicineDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO medicines
-         (
-           name,
-           strength,
-           category_id
-         )
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [
-          name,
-          strength,
-          category_id,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `INSERT INTO medicines
+           (
+             name,
+             strength,
+             category_id
+           )
+           VALUES ($1, $2, $3)
+           RETURNING *`,
+          [
+            name,
+            strength,
+            category_id,
+          ],
+        );
 
-    const createdMedicine = result.rows[0];
+        const createdMedicine = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'CREATE',
-      'MEDICINES',
-      createdMedicine.id,
-      `Created medicine: ${createdMedicine.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'MEDICINES',
+          createdMedicine.id,
+          `Created medicine: ${createdMedicine.name}`,
+          client,
+        );
+
+        return createdMedicine;
+      },
     );
-
-    return createdMedicine;
   }
 
   async updateMedicine(
@@ -113,73 +116,79 @@ export class MedicinesService {
       category_id,
     } = updateMedicineDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `UPDATE medicines
-         SET
-           name = $1,
-           strength = $2,
-           category_id = $3
-         WHERE id = $4
-         RETURNING *`,
-        [
-          name,
-          strength,
-          category_id,
-          id,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `UPDATE medicines
+           SET
+             name = $1,
+             strength = $2,
+             category_id = $3
+           WHERE id = $4
+           RETURNING *`,
+          [
+            name,
+            strength,
+            category_id,
+            id,
+          ],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Medicine not found',
-      );
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException(
+            'Medicine not found',
+          );
+        }
 
-    const updatedMedicine = result.rows[0];
+        const updatedMedicine = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'UPDATE',
-      'MEDICINES',
-      updatedMedicine.id,
-      `Updated medicine: ${updatedMedicine.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'UPDATE',
+          'MEDICINES',
+          updatedMedicine.id,
+          `Updated medicine: ${updatedMedicine.name}`,
+          client,
+        );
+
+        return updatedMedicine;
+      },
     );
-
-    return updatedMedicine;
   }
 
   async deleteMedicine(
     id: number,
     actorUserId: number,
   ) {
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        'DELETE FROM medicines WHERE id = $1 RETURNING *',
-        [id],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          'DELETE FROM medicines WHERE id = $1 RETURNING *',
+          [id],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Medicine not found',
-      );
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException(
+            'Medicine not found',
+          );
+        }
 
-    const deletedMedicine = result.rows[0];
+        const deletedMedicine = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'DELETE',
-      'MEDICINES',
-      deletedMedicine.id,
-      `Deleted medicine: ${deletedMedicine.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'DELETE',
+          'MEDICINES',
+          deletedMedicine.id,
+          `Deleted medicine: ${deletedMedicine.name}`,
+          client,
+        );
+
+        return {
+          message: 'Medicine deleted successfully',
+          medicine: deletedMedicine,
+        };
+      },
     );
-
-    return {
-      message: 'Medicine deleted successfully',
-      medicine: deletedMedicine,
-    };
   }
 }

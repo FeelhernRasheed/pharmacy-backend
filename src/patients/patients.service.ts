@@ -78,43 +78,46 @@ export class PatientsService {
       address,
     } = createPatientDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO patients
-         (
-           full_name,
-           phone,
-           email,
-           date_of_birth,
-           gender,
-           address
-         )
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [
-          full_name,
-          phone ?? null,
-          email ?? null,
-          date_of_birth ?? null,
-          gender ?? null,
-          address ?? null,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `INSERT INTO patients
+           (
+             full_name,
+             phone,
+             email,
+             date_of_birth,
+             gender,
+             address
+           )
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            full_name,
+            phone ?? null,
+            email ?? null,
+            date_of_birth ?? null,
+            gender ?? null,
+            address ?? null,
+          ],
+        );
 
-    const createdPatient = result.rows[0];
+        const createdPatient = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'PATIENTS',
-        createdPatient.id,
-        `Created patient: ${createdPatient.full_name}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'CREATE',
+            'PATIENTS',
+            createdPatient.id,
+            `Created patient: ${createdPatient.full_name}`,
+            client,
+          );
+        }
 
-    return createdPatient;
+        return createdPatient;
+      },
+    );
   }
 
   async updatePatient(
@@ -132,83 +135,89 @@ export class PatientsService {
       status,
     } = updatePatientDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `UPDATE patients
-         SET full_name = COALESCE($1, full_name),
-             phone = COALESCE($2, phone),
-             email = COALESCE($3, email),
-             date_of_birth = COALESCE($4, date_of_birth),
-             gender = COALESCE($5, gender),
-             address = COALESCE($6, address),
-             status = COALESCE($7, status),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $8
-         RETURNING *`,
-        [
-          full_name ?? null,
-          phone ?? null,
-          email ?? null,
-          date_of_birth ?? null,
-          gender ?? null,
-          address ?? null,
-          status ?? null,
-          id,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `UPDATE patients
+           SET full_name = COALESCE($1, full_name),
+               phone = COALESCE($2, phone),
+               email = COALESCE($3, email),
+               date_of_birth = COALESCE($4, date_of_birth),
+               gender = COALESCE($5, gender),
+               address = COALESCE($6, address),
+               status = COALESCE($7, status),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $8
+           RETURNING *`,
+          [
+            full_name ?? null,
+            phone ?? null,
+            email ?? null,
+            date_of_birth ?? null,
+            gender ?? null,
+            address ?? null,
+            status ?? null,
+            id,
+          ],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Patient not found');
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Patient not found');
+        }
 
-    const updatedPatient = result.rows[0];
+        const updatedPatient = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'UPDATE',
-        'PATIENTS',
-        updatedPatient.id,
-        `Updated patient: ${updatedPatient.full_name}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'UPDATE',
+            'PATIENTS',
+            updatedPatient.id,
+            `Updated patient: ${updatedPatient.full_name}`,
+            client,
+          );
+        }
 
-    return updatedPatient;
+        return updatedPatient;
+      },
+    );
   }
 
   async deletePatient(
     id: number,
     actorUserId?: number,
   ) {
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `DELETE FROM patients
-         WHERE id = $1
-         RETURNING *`,
-        [id],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `DELETE FROM patients
+           WHERE id = $1
+           RETURNING *`,
+          [id],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Patient not found');
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Patient not found');
+        }
 
-    const deletedPatient = result.rows[0];
+        const deletedPatient = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'DELETE',
-        'PATIENTS',
-        deletedPatient.id,
-        `Deleted patient: ${deletedPatient.full_name}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'DELETE',
+            'PATIENTS',
+            deletedPatient.id,
+            `Deleted patient: ${deletedPatient.full_name}`,
+            client,
+          );
+        }
 
-    return {
-      message: 'Patient deleted successfully',
-      patient: deletedPatient,
-    };
+        return {
+          message: 'Patient deleted successfully',
+          patient: deletedPatient,
+        };
+      },
+    );
   }
 }

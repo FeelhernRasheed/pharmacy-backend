@@ -109,6 +109,37 @@ Write rules per module:
 - **Adjustments:** stock adjustments only reduce quantity (DAMAGE / EXPIRED / LOST / CORRECTION).
 - **Audit log:** every create/update/delete records the acting user in `audit_logs`.
 
+## Idempotency
+
+`POST /sales`, `POST /sale-items` and `POST /payments` accept an optional
+`Idempotency-Key` header (8-128 characters, `A-Z a-z 0-9 . _ : -`).
+
+- The key is **explicit only**. `X-Request-Id` is a correlation id for logs
+  and is never used as an idempotency key.
+- The key is bound to the request: the API stores a fingerprint (SHA-256 over
+  the HTTP method, the endpoint and the canonical payload — sorted keys,
+  dropped `undefined` properties, normalised numbers) together with the key.
+  - Same key + same payload → the stored status code and response body are
+    replayed, the business change is **not** executed again.
+  - Same key + different payload → `409 Conflict`, the business handler is
+    never executed.
+  - Same key while the first request is still running → `409 Conflict`.
+- A request without the header is executed normally, without idempotency
+  protection. The header is not required yet, so existing clients (the
+  Next.js frontend does not send it) keep working.
+- The claim, the fingerprint, the business change, the stock changes, the
+  payments and the audit records are written in **one** transaction. A failed
+  request rolls everything back, including the key, so the same key can be
+  retried.
+- Records written before fingerprinting existed (`request_hash IS NULL`) cannot
+  be verified. They are replayed without verification — the behaviour they
+  were created with — and are logged as a warning. Every new record carries a
+  fingerprint and is verified strictly.
+- The idempotency table is created by `db/migrations/002_idempotency_keys.sql`
+  and the fingerprint column by `db/migrations/003_idempotency_request_hash.sql`.
+  If the table or the column is missing, the API logs a warning and keeps
+  working without idempotency protection instead of failing every write.
+
 ## API surface
 
 | Tag | Base path | Endpoints |
@@ -159,16 +190,16 @@ All errors follow a consistent shape:
 ## Testing
 
 ```bash
-# unit tests (46 suites, 138 tests; no database required — all DB access is mocked)
+# unit tests (49 suites, 200 tests; no database required — all DB access is mocked)
 npm test
 
 # coverage
 npm run test:cov
 
-# e2e tests (3 suites, 17 tests; boot the app against a PostgreSQL database)
+# e2e tests (4 suites, 19 tests; boot the app against a PostgreSQL database)
 npm run test:e2e
 
-# integration suite (1 suite, 34 tests; full purchase → inventory → sales →
+# integration suite (1 suite, 41 tests; full purchase → inventory → sales →
 # payments → reports workflow against a real PostgreSQL database)
 # Single-line form (works in PowerShell and bash; run from the project root):
 node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/integration/jest-e2e-integration.json --runInBand
@@ -184,12 +215,24 @@ npm run build
 ```
 
 The e2e and integration suites **must** be pointed at an isolated test
-database, never at production data. Override the database environment
-variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
-`JWT_SECRET`, and the `RATE_LIMIT_*` / `AUTH_RATE_LIMIT_*` variables)
-before running them. The integration suite creates uniquely-suffixed
-fixture rows and removes them afterwards; `test_admin` and the seeded
-test supplier are never touched.
+database, never at production data. The suites pin the database target
+themselves: `TEST_DB_*` (env vars or the git-ignored `test/.env.test`) is
+resolved before the app is created and the run is aborted unless the target
+is the `pharmacy_test` database on the test instance. The integration suite
+creates uniquely-suffixed fixture rows and removes them afterwards;
+`test_admin` and the seeded test supplier are never touched.
+
+```bash
+# apply the approved migrations to the test database only
+npm run db:migrate:test
+
+# integration suite
+npm run test:integration
+```
+
+`npm run db:migrate:test` refuses to run against anything but
+`pharmacy_test`; the development and production databases are migrated by
+hand with explicit approval.
 
 ## Environment & security notes
 

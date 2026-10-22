@@ -153,6 +153,16 @@ describe('Purchase → Inventory → Sales → Payments → Reports integration'
       .send({ sale_id: saleId, amount, payment_method });
   }
 
+  // The stored sale total, which follows the authoritative batch price.
+  async function saleTotal(saleId: number): Promise<number> {
+    const result = await pool.query(
+      'SELECT total_amount::text AS total_amount FROM sales WHERE id = $1',
+      [saleId],
+    );
+
+    return Number(result.rows[0].total_amount);
+  }
+
   describe('1. Purchase workflow', () => {
     it('creates a purchase for an existing supplier with default COMPLETED status and zero total', async () => {
       const response = await addPurchaseItemPurchaseFixture().expect(201);
@@ -437,13 +447,23 @@ describe('Purchase → Inventory → Sales → Payments → Reports integration'
       const saleId = await createSale();
       saleCancelledId = saleId;
 
+      const batchBefore = await getBatchState(pool, batchBId);
+
       const response = await addSaleItem(saleId, {
         batch_id: batchBId,
         quantity: 6,
         unit_price: 5,
       }).expect(201);
       ids.saleItemIds.push(response.body.id);
-      expect(Number(response.body.subtotal)).toBe(30);
+
+      // The batch price is authoritative: the price sent by the client
+      // is ignored, so the subtotal follows medicine_batches.selling_price.
+      expect(Number(response.body.unit_price)).toBe(
+        batchBefore.selling_price,
+      );
+      expect(Number(response.body.subtotal)).toBe(
+        6 * batchBefore.selling_price,
+      );
 
       // batchB received 8 units in the purchase concurrency test.
       const batch = await getBatchState(pool, batchBId);
@@ -577,6 +597,25 @@ describe('Purchase → Inventory → Sales → Payments → Reports integration'
   });
 
   describe('4. Payments workflow', () => {
+    // A dedicated batch with enough stock for the idempotency tests, so
+    // they do not depend on the stock left over by the other tests.
+    const batchI = `PBI-${suffix}`;
+    let batchIId: number;
+
+    beforeAll(async () => {
+      const purchase = await createPurchase();
+      const received = await addPurchaseItem(purchase, {
+        batch_number: batchI,
+        expiry_date: futureDate(),
+        quantity: 20,
+        buying_price: 0.05,
+        selling_price: 0.1,
+      }).expect(201);
+      ids.purchaseItemIds.push(received.body.id);
+      batchIId = await batchIdFor(batchI);
+      ids.batchIds.push(batchIId);
+    });
+
     it('accepts an exact final payment despite binary floating-point subtraction (regression)', async () => {
       const received = await addPurchaseItem(await createPurchase(), {
         batch_number: batchD,
@@ -628,7 +667,10 @@ describe('Purchase → Inventory → Sales → Payments → Reports integration'
       }).expect(201);
       ids.saleItemIds.push(item.body.id);
 
-      const first = await createPayment(saleFullPayId, 5).expect(201);
+      // The sale total follows the batch price, so the payment has to
+      // cover exactly that total to leave a remaining amount of 0.00.
+      const total = await saleTotal(saleFullPayId);
+      const first = await createPayment(saleFullPayId, total).expect(201);
       ids.paymentIds.push(first.body.id);
 
       const overpay = await createPayment(saleFullPayId, 0.01).expect(400);
@@ -668,6 +710,298 @@ describe('Purchase → Inventory → Sales → Payments → Reports integration'
         [ids.saleIds],
       );
       expect(overpaid.rows).toHaveLength(0);
+    });
+
+    it('replays a repeated payment with the same Idempotency-Key instead of charging twice', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment`;
+
+      const first = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+      ids.paymentIds.push(first.body.id);
+
+      const replay = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+
+      // The repeated request is answered from the stored response and
+      // must not create a second payment row.
+      expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.body.id).toBe(first.body.id);
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(1);
+    });
+
+    it('rejects a reused Idempotency-Key with a different payload', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment-conflict`;
+
+      const first = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+      ids.paymentIds.push(first.body.id);
+
+      // The same key with a different amount is a different request:
+      // it must be rejected instead of replaying the stored response.
+      const conflict = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total + 1, payment_method: 'CASH' })
+        .expect(409);
+      expect(JSON.stringify(conflict.body)).toContain('Idempotency-Key');
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(1);
+    });
+
+    it('replays a repeated request whose payload is written differently', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment-canonical`;
+
+      const first = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+      ids.paymentIds.push(first.body.id);
+
+      // Same values, different key order and an integer amount written
+      // as a float: the canonical payload is identical, so the request
+      // is a replay and not a conflict.
+      const replay = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ payment_method: 'CASH', amount: total, sale_id: saleId })
+        .expect(201);
+
+      expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.body.id).toBe(first.body.id);
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(1);
+    });
+
+    it('executes a repeated request only once when it is sent concurrently', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment-concurrent`;
+
+      const responses = await Promise.all([
+        request(app.getHttpServer())
+          .post('/payments')
+          .set(auth(tokens.cashier))
+          .set('Idempotency-Key', key)
+          .send({ sale_id: saleId, amount: total, payment_method: 'CASH' }),
+        request(app.getHttpServer())
+          .post('/payments')
+          .set(auth(tokens.cashier))
+          .set('Idempotency-Key', key)
+          .send({ sale_id: saleId, amount: total, payment_method: 'CASH' }),
+      ]);
+
+      for (const response of responses) {
+        expect(response.status).toBe(201);
+        ids.paymentIds.push(response.body.id);
+      }
+
+      // One request executed the payment, the other one replayed it.
+      const replayed = responses.filter(
+        (response) => response.headers['idempotency-replayed'] === 'true',
+      );
+      expect(replayed).toHaveLength(1);
+      expect(responses[0].body.id).toBe(responses[1].body.id);
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(1);
+    });
+
+    it('releases the key after a failed payment so the same key can be retried', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment-retry`;
+
+      // The payment fails (the amount is not covered) and the whole
+      // transaction is rolled back, so the key is released again.
+      await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total + 5, payment_method: 'CASH' })
+        .expect(400);
+
+      const retry = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+      ids.paymentIds.push(retry.body.id);
+
+      expect(retry.headers['idempotency-replayed']).toBeUndefined();
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(1);
+    });
+
+    it('does not use X-Request-Id as an idempotency key', async () => {
+      const firstSaleId = await createSale();
+      const firstItem = await addSaleItem(firstSaleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(firstItem.body.id);
+
+      const secondSaleId = await createSale();
+      const secondItem = await addSaleItem(secondSaleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(secondItem.body.id);
+
+      const requestId = `it-${suffix}-request-id`;
+
+      const first = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('X-Request-Id', requestId)
+        .send({
+          sale_id: firstSaleId,
+          amount: await saleTotal(firstSaleId),
+          payment_method: 'CASH',
+        })
+        .expect(201);
+      ids.paymentIds.push(first.body.id);
+
+      const second = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('X-Request-Id', requestId)
+        .send({
+          sale_id: secondSaleId,
+          amount: await saleTotal(secondSaleId),
+          payment_method: 'CASH',
+        })
+        .expect(201);
+      ids.paymentIds.push(second.body.id);
+
+      // Without an Idempotency-Key both requests are executed, the
+      // correlation id does not turn the second one into a replay.
+      expect(second.headers['idempotency-replayed']).toBeUndefined();
+      expect(second.body.id).not.toBe(first.body.id);
+
+      const keys = await pool.query(
+        'SELECT COUNT(*) FROM idempotency_keys WHERE idempotency_key = $1',
+        [requestId],
+      );
+      expect(Number(keys.rows[0].count)).toBe(0);
+    });
+
+    it('replays a legacy record that has no fingerprint', async () => {
+      const saleId = await createSale();
+      const item = await addSaleItem(saleId, {
+        batch_id: batchIId,
+        quantity: 1,
+        unit_price: 0.1,
+      }).expect(201);
+      ids.saleItemIds.push(item.body.id);
+
+      const total = await saleTotal(saleId);
+      const key = `it-${suffix}-payment-legacy`;
+
+      // A record written before the fingerprint column existed: the
+      // payload cannot be verified, so the stored response is replayed
+      // without verification.
+      await pool.query(
+        `INSERT INTO idempotency_keys
+           (endpoint, idempotency_key, status_code, response_body, request_hash)
+         VALUES ('POST /payments', $1, 201, $2::jsonb, NULL)`,
+        [key, JSON.stringify({ id: 424242, sale_id: saleId })],
+      );
+
+      const replay = await request(app.getHttpServer())
+        .post('/payments')
+        .set(auth(tokens.cashier))
+        .set('Idempotency-Key', key)
+        .send({ sale_id: saleId, amount: total, payment_method: 'CASH' })
+        .expect(201);
+
+      expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.body.id).toBe(424242);
+
+      const payments = await pool.query(
+        'SELECT COUNT(*) FROM payments WHERE sale_id = $1',
+        [saleId],
+      );
+      expect(Number(payments.rows[0].count)).toBe(0);
     });
   });
 

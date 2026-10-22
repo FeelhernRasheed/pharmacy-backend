@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsInt,
   IsNumber,
+  IsOptional,
   Min,
 } from 'class-validator';
 
@@ -21,8 +22,15 @@ export class CreateSaleItemDto {
   @Min(1)
   quantity: number;
 
-  @ApiProperty({ description: 'Unit Price', example: 1 })
+  @ApiProperty({
+    description:
+      'Optional and ignored. The unit price is always taken from the medicine batch on the server; a value sent here is never used to calculate the subtotal.',
+    example: 1,
+    required: false,
+    deprecated: true,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  unit_price: number;
+  unit_price?: number;
 }

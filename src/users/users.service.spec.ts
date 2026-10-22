@@ -5,27 +5,30 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 
+import { createDatabaseServiceMock } from '../../test/support/database-service.mock';
+import type { DatabaseServiceMock } from '../../test/support/database-service.mock';
+
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
   let service: UsersService;
+  let database: DatabaseServiceMock;
   let queryMock: jest.Mock;
   let auditMock: jest.Mock;
 
   beforeEach(async () => {
     queryMock = jest.fn();
     auditMock = jest.fn();
+    database = createDatabaseServiceMock(queryMock);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         {
           provide: DatabaseService,
-          useValue: {
-            getPool: () => ({ query: queryMock }),
-          },
+          useValue: database.provider,
         },
         {
           provide: AuditLogsService,
@@ -75,6 +78,59 @@ describe('UsersService', () => {
       );
       expect(result).not.toHaveProperty('password_hash');
       expect(auditMock).toHaveBeenCalled();
+    });
+
+    it('writes the audit log inside the create transaction', async () => {
+      queryMock
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 10,
+              full_name: dto.full_name,
+              username: dto.username,
+              role: dto.role,
+              status: 'ACTIVE',
+            },
+          ],
+        });
+
+      await service.createUser(dto, 1);
+
+      expect(auditMock).toHaveBeenCalledWith(
+        1,
+        'CREATE',
+        'USERS',
+        10,
+        expect.stringContaining('new_cashier'),
+        database.client,
+      );
+      expect(database.transaction).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('rolls the user back when the audit log cannot be written', async () => {
+      queryMock
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 10,
+              full_name: dto.full_name,
+              username: dto.username,
+              role: dto.role,
+              status: 'ACTIVE',
+            },
+          ],
+        });
+
+      auditMock.mockRejectedValueOnce(new Error('audit unavailable'));
+
+      await expect(service.createUser(dto, 1)).rejects.toThrow(
+        'audit unavailable',
+      );
+
+      expect(database.transaction).toHaveBeenCalledWith('ROLLBACK');
+      expect(database.transaction).not.toHaveBeenCalledWith('COMMIT');
     });
 
     it('rejects a duplicate username', async () => {

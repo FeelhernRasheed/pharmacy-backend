@@ -56,39 +56,42 @@ export class SuppliersService {
       address,
     } = createSupplierDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO suppliers
-         (
-           name,
-           phone,
-           email,
-           address
-         )
-         VALUES ($1, $2, $3, $4)
-         RETURNING *`,
-        [
-          name,
-          phone ?? null,
-          email ?? null,
-          address ?? null,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `INSERT INTO suppliers
+           (
+             name,
+             phone,
+             email,
+             address
+           )
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [
+            name,
+            phone ?? null,
+            email ?? null,
+            address ?? null,
+          ],
+        );
 
-    const createdSupplier = result.rows[0];
+        const createdSupplier = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'CREATE',
-        'SUPPLIERS',
-        createdSupplier.id,
-        `Created supplier: ${createdSupplier.id}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'CREATE',
+            'SUPPLIERS',
+            createdSupplier.id,
+            `Created supplier: ${createdSupplier.id}`,
+            client,
+          );
+        }
 
-    return createdSupplier;
+        return createdSupplier;
+      },
+    );
   }
 
   async updateSupplier(
@@ -103,77 +106,83 @@ export class SuppliersService {
       address,
     } = updateSupplierDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `UPDATE suppliers
-         SET name = COALESCE($1, name),
-             phone = COALESCE($2, phone),
-             email = COALESCE($3, email),
-             address = COALESCE($4, address),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5
-         RETURNING *`,
-        [
-          name ?? null,
-          phone ?? null,
-          email ?? null,
-          address ?? null,
-          id,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `UPDATE suppliers
+           SET name = COALESCE($1, name),
+               phone = COALESCE($2, phone),
+               email = COALESCE($3, email),
+               address = COALESCE($4, address),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $5
+           RETURNING *`,
+          [
+            name ?? null,
+            phone ?? null,
+            email ?? null,
+            address ?? null,
+            id,
+          ],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Supplier not found');
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Supplier not found');
+        }
 
-    const updatedSupplier = result.rows[0];
+        const updatedSupplier = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'UPDATE',
-        'SUPPLIERS',
-        updatedSupplier.id,
-        `Updated supplier: ${updatedSupplier.id}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'UPDATE',
+            'SUPPLIERS',
+            updatedSupplier.id,
+            `Updated supplier: ${updatedSupplier.id}`,
+            client,
+          );
+        }
 
-    return updatedSupplier;
+        return updatedSupplier;
+      },
+    );
   }
 
   async deleteSupplier(
     id: number,
     actorUserId?: number,
   ) {
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `DELETE FROM suppliers
-         WHERE id = $1
-         RETURNING *`,
-        [id],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `DELETE FROM suppliers
+           WHERE id = $1
+           RETURNING *`,
+          [id],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('Supplier not found');
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException('Supplier not found');
+        }
 
-    const deletedSupplier = result.rows[0];
+        const deletedSupplier = result.rows[0];
 
-    if (actorUserId) {
-      await this.auditLogsService.createAuditLog(
-        actorUserId,
-        'DELETE',
-        'SUPPLIERS',
-        deletedSupplier.id,
-        `Deleted supplier: ${deletedSupplier.id}`,
-      );
-    }
+        if (actorUserId) {
+          await this.auditLogsService.createAuditLog(
+            actorUserId,
+            'DELETE',
+            'SUPPLIERS',
+            deletedSupplier.id,
+            `Deleted supplier: ${deletedSupplier.id}`,
+            client,
+          );
+        }
 
-    return {
-      message: 'Supplier deleted successfully',
-      supplier: deletedSupplier,
-    };
+        return {
+          message: 'Supplier deleted successfully',
+          supplier: deletedSupplier,
+        };
+      },
+    );
   }
 }

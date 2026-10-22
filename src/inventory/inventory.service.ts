@@ -88,85 +88,86 @@ export class InventoryService {
       selling_price,
     } = createBatchDto;
 
-    const medicine = await this.databaseService
-      .getPool()
-      .query(
-        'SELECT id FROM medicines WHERE id = $1',
-        [medicine_id],
-      );
-
-    if (medicine.rows.length === 0) {
-      throw new NotFoundException(
-        'Medicine not found',
-      );
-    }
-
-    const expiryDate = String(expiry_date).slice(0, 10);
-
-    const todayResult = await this.databaseService
-      .getPool()
-      .query(`SELECT CURRENT_DATE::text AS today`);
-
-    const today = todayResult.rows[0].today as string;
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-      throw new BadRequestException(
-        'expiry_date must be a valid date',
-      );
-    }
-
-    if (expiryDate < today) {
-      throw new BadRequestException(
-        'Cannot create a batch with an expiry date in the past',
-      );
-    }
-
-    let result;
-
-    try {
-      result = await this.databaseService
-        .getPool()
-        .query(
-          `INSERT INTO medicine_batches
-         (
-           medicine_id,
-           batch_number,
-           expiry_date,
-           quantity,
-           buying_price,
-           selling_price
-         )
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-          [
-            medicine_id,
-            batch_number,
-            expiry_date,
-            quantity,
-            buying_price,
-            selling_price,
-          ],
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const medicine = await client.query(
+          'SELECT id FROM medicines WHERE id = $1',
+          [medicine_id],
         );
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ConflictException(
-          `A batch with number "${batch_number}" already exists for this medicine`,
+
+        if (medicine.rows.length === 0) {
+          throw new NotFoundException(
+            'Medicine not found',
+          );
+        }
+
+        const expiryDate = String(expiry_date).slice(0, 10);
+
+        const todayResult = await client.query(
+          `SELECT CURRENT_DATE::text AS today`,
         );
-      }
-      throw error;
-    }
 
-    const createdBatch = result.rows[0];
+        const today = todayResult.rows[0].today as string;
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'CREATE',
-      'INVENTORY',
-      createdBatch.id,
-      `Created inventory batch: ${createdBatch.batch_number}`,
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+          throw new BadRequestException(
+            'expiry_date must be a valid date',
+          );
+        }
+
+        if (expiryDate < today) {
+          throw new BadRequestException(
+            'Cannot create a batch with an expiry date in the past',
+          );
+        }
+
+        let result;
+
+        try {
+          result = await client.query(
+            `INSERT INTO medicine_batches
+             (
+               medicine_id,
+               batch_number,
+               expiry_date,
+               quantity,
+               buying_price,
+               selling_price
+             )
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [
+              medicine_id,
+              batch_number,
+              expiry_date,
+              quantity,
+              buying_price,
+              selling_price,
+            ],
+          );
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new ConflictException(
+              `A batch with number "${batch_number}" already exists for this medicine`,
+            );
+          }
+          throw error;
+        }
+
+        const createdBatch = result.rows[0];
+
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'INVENTORY',
+          createdBatch.id,
+          `Created inventory batch: ${createdBatch.batch_number}`,
+          client,
+        );
+
+        return createdBatch;
+      },
     );
-
-    return createdBatch;
   }
 
   async updateBatch(
@@ -182,135 +183,129 @@ export class InventoryService {
       selling_price,
     } = updateBatchDto;
 
-    const existing = await this.databaseService
-      .getPool()
-      .query(
-        'SELECT id, batch_number, quantity FROM medicine_batches WHERE id = $1',
-        [id],
-      );
-
-    if (existing.rows.length === 0) {
-      throw new NotFoundException(
-        'Batch not found',
-      );
-    }
-
-    if (expiry_date !== undefined) {
-      const expiryDate = String(expiry_date).slice(0, 10);
-
-      const todayResult = await this.databaseService
-        .getPool()
-        .query(`SELECT CURRENT_DATE::text AS today`);
-
-      const today = todayResult.rows[0].today as string;
-
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-        throw new BadRequestException(
-          'expiry_date must be a valid date',
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const existing = await client.query(
+          'SELECT id, batch_number, quantity FROM medicine_batches WHERE id = $1',
+          [id],
         );
-      }
 
-      if (expiryDate < today) {
-        throw new BadRequestException(
-          'Cannot set an expiry date in the past',
+        if (existing.rows.length === 0) {
+          throw new NotFoundException(
+            'Batch not found',
+          );
+        }
+
+        if (expiry_date !== undefined) {
+          const expiryDate = String(expiry_date).slice(0, 10);
+
+          const todayResult = await client.query(
+            `SELECT CURRENT_DATE::text AS today`,
+          );
+
+          const today = todayResult.rows[0].today as string;
+
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+            throw new BadRequestException(
+              'expiry_date must be a valid date',
+            );
+          }
+
+          if (expiryDate < today) {
+            throw new BadRequestException(
+              'Cannot set an expiry date in the past',
+            );
+          }
+        }
+
+        const previousQuantity = Number(
+          existing.rows[0].quantity,
         );
-      }
-    }
 
-    const previousQuantity = Number(
-      existing.rows[0].quantity,
+        let result;
+
+        try {
+          result = await client.query(
+            `UPDATE medicine_batches
+             SET batch_number = COALESCE($1, batch_number),
+                 expiry_date = COALESCE($2, expiry_date),
+                 quantity = COALESCE($3, quantity),
+                 buying_price = COALESCE($4, buying_price),
+                 selling_price = COALESCE($5, selling_price)
+             WHERE id = $6
+             RETURNING *`,
+            [
+              batch_number ?? null,
+              expiry_date ?? null,
+              quantity ?? null,
+              buying_price ?? null,
+              selling_price ?? null,
+              id,
+            ],
+          );
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new ConflictException(
+              `A batch with number "${batch_number}" already exists for this medicine`,
+            );
+          }
+          throw error;
+        }
+
+        if (result.rows.length === 0) {
+          throw new NotFoundException(
+            'Batch not found',
+          );
+        }
+
+        const updatedBatch = result.rows[0];
+        const newQuantity = Number(updatedBatch.quantity);
+
+        const quantityDetail =
+          newQuantity !== previousQuantity
+            ? ` (quantity ${previousQuantity} -> ${newQuantity})`
+            : '';
+
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'UPDATE',
+          'INVENTORY',
+          updatedBatch.id,
+          `Updated inventory batch: ${updatedBatch.batch_number}${quantityDetail}`,
+          client,
+        );
+
+        return updatedBatch;
+      },
     );
-
-    let result;
-
-    try {
-      result = await this.databaseService
-        .getPool()
-        .query(
-          `UPDATE medicine_batches
-         SET batch_number = COALESCE($1, batch_number),
-             expiry_date = COALESCE($2, expiry_date),
-             quantity = COALESCE($3, quantity),
-             buying_price = COALESCE($4, buying_price),
-             selling_price = COALESCE($5, selling_price)
-         WHERE id = $6
-         RETURNING *`,
-          [
-            batch_number ?? null,
-            expiry_date ?? null,
-            quantity ?? null,
-            buying_price ?? null,
-            selling_price ?? null,
-            id,
-          ],
-        );
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ConflictException(
-          `A batch with number "${batch_number}" already exists for this medicine`,
-        );
-      }
-      throw error;
-    }
-
-    if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Batch not found',
-      );
-    }
-
-    const updatedBatch = result.rows[0];
-    const newQuantity = Number(updatedBatch.quantity);
-
-    const quantityDetail =
-      newQuantity !== previousQuantity
-        ? ` (quantity ${previousQuantity} -> ${newQuantity})`
-        : '';
-
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'UPDATE',
-      'INVENTORY',
-      updatedBatch.id,
-      `Updated inventory batch: ${updatedBatch.batch_number}${quantityDetail}`,
-    );
-
-    return updatedBatch;
   }
 
   async deleteBatch(
     id: number,
     actorUserId: number,
   ) {
-    const pool = this.databaseService.getPool();
-    const client = await pool.connect();
-
-    let deletedBatch: Record<string, any>;
-
-    try {
-      await client.query('BEGIN');
-
-      const batchResult = await client.query(
-        'SELECT * FROM medicine_batches WHERE id = $1 FOR UPDATE',
-        [id],
-      );
-
-      if (batchResult.rows.length === 0) {
-        throw new NotFoundException(
-          'Batch not found',
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const batchResult = await client.query(
+          'SELECT * FROM medicine_batches WHERE id = $1 FOR UPDATE',
+          [id],
         );
-      }
 
-      const batch = batchResult.rows[0];
+        if (batchResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Batch not found',
+          );
+        }
 
-      if (Number(batch.quantity) > 0) {
-        throw new BadRequestException(
-          `Cannot delete a batch with remaining stock (${batch.quantity}). Set the quantity to 0 using a stock adjustment first.`,
-        );
-      }
+        const batch = batchResult.rows[0];
 
-      const references =
-        await client.query(
+        if (Number(batch.quantity) > 0) {
+          throw new BadRequestException(
+            `Cannot delete a batch with remaining stock (${batch.quantity}). Set the quantity to 0 using a stock adjustment first.`,
+          );
+        }
+
+        const references = await client.query(
           `SELECT
              (SELECT COUNT(*) FROM sale_items WHERE batch_id = $1) AS sale_items,
              (SELECT COUNT(*) FROM dispensing_items WHERE batch_id = $1) AS dispensing_items,
@@ -318,45 +313,40 @@ export class InventoryService {
           [id],
         );
 
-      const ref = references.rows[0];
+        const ref = references.rows[0];
 
-      const totalReferences =
-        Number(ref.sale_items) +
-        Number(ref.dispensing_items) +
-        Number(ref.stock_adjustments);
+        const totalReferences =
+          Number(ref.sale_items) +
+          Number(ref.dispensing_items) +
+          Number(ref.stock_adjustments);
 
-      if (totalReferences > 0) {
-        throw new ConflictException(
-          'Cannot delete a batch that is referenced by sales, dispensing records, or stock adjustments',
+        if (totalReferences > 0) {
+          throw new ConflictException(
+            'Cannot delete a batch that is referenced by sales, dispensing records, or stock adjustments',
+          );
+        }
+
+        const deleteResult = await client.query(
+          'DELETE FROM medicine_batches WHERE id = $1 RETURNING *',
+          [id],
         );
-      }
 
-      const deleteResult = await client.query(
-        'DELETE FROM medicine_batches WHERE id = $1 RETURNING *',
-        [id],
-      );
+        const deletedBatch = deleteResult.rows[0];
 
-      deletedBatch = deleteResult.rows[0];
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'DELETE',
+          'INVENTORY',
+          deletedBatch.id,
+          `Deleted inventory batch: ${deletedBatch.batch_number}`,
+          client,
+        );
 
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'DELETE',
-      'INVENTORY',
-      deletedBatch.id,
-      `Deleted inventory batch: ${deletedBatch.batch_number}`,
+        return {
+          message: 'Batch deleted successfully',
+          batch: deletedBatch,
+        };
+      },
     );
-
-    return {
-      message: 'Batch deleted successfully',
-      batch: deletedBatch,
-    };
   }
 }

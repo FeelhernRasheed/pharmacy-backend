@@ -67,12 +67,6 @@ export class PrescriptionsService {
         [id],
       );
 
-    if (prescriptionResult.rows.length === 0) {
-      throw new NotFoundException(
-        'Prescription not found',
-      );
-    }
-
     const itemsResult = await this.databaseService
       .getPool()
       .query(
@@ -118,81 +112,80 @@ export class PrescriptionsService {
       );
     }
 
-    const patientResult = await this.databaseService
-      .getPool()
-      .query(
-        `SELECT id
-         FROM patients
-         WHERE id = $1`,
-        [patient_id],
-      );
-
-    if (patientResult.rows.length === 0) {
-      throw new NotFoundException(
-        'Patient not found',
-      );
-    }
-
     if (!actorUserId) {
       throw new NotFoundException(
         'Authenticated user not found',
       );
     }
 
-    const userResult = await this.databaseService
-      .getPool()
-      .query(
-        `SELECT id
-         FROM users
-         WHERE id = $1`,
-        [actorUserId],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const patientResult = await client.query(
+          `SELECT id
+           FROM patients
+           WHERE id = $1`,
+          [patient_id],
+        );
 
-    if (userResult.rows.length === 0) {
-      throw new NotFoundException(
-        'Prescriber not found',
-      );
-    }
+        if (patientResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Patient not found',
+          );
+        }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO prescriptions
-         (
-           patient_id,
-           prescribed_by,
-           notes,
-           status
-         )
-         VALUES ($1, $2, $3, $4)
-         RETURNING
-           id,
-           patient_id,
-           prescribed_by,
-           prescription_date,
-           notes,
-           status,
-           created_at,
-           updated_at`,
-        [
-          patient_id,
+        const userResult = await client.query(
+          `SELECT id
+           FROM users
+           WHERE id = $1`,
+          [actorUserId],
+        );
+
+        if (userResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Prescriber not found',
+          );
+        }
+
+        const result = await client.query(
+          `INSERT INTO prescriptions
+           (
+             patient_id,
+             prescribed_by,
+             notes,
+             status
+           )
+           VALUES ($1, $2, $3, $4)
+           RETURNING
+             id,
+             patient_id,
+             prescribed_by,
+             prescription_date,
+             notes,
+             status,
+             created_at,
+             updated_at`,
+          [
+            patient_id,
+            actorUserId,
+            notes ?? null,
+            status ?? 'PENDING',
+          ],
+        );
+
+        const createdPrescription = result.rows[0];
+
+        await this.auditLogsService.createAuditLog(
           actorUserId,
-          notes ?? null,
-          status ?? 'PENDING',
-        ],
-      );
+          'CREATE',
+          'PRESCRIPTIONS',
+          createdPrescription.id,
+          `Created prescription: ${createdPrescription.id}`,
+          client,
+        );
 
-    const createdPrescription = result.rows[0];
-
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'CREATE',
-      'PRESCRIPTIONS',
-      createdPrescription.id,
-      `Created prescription: ${createdPrescription.id}`,
+        return createdPrescription;
+      },
     );
-
-    return createdPrescription;
   }
 
   async createPrescriptionItem(
@@ -215,89 +208,86 @@ export class PrescriptionsService {
       );
     }
 
-    const prescriptionResult =
-      await this.databaseService
-        .getPool()
-        .query(
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const prescriptionResult = await client.query(
           `SELECT id, status
            FROM prescriptions
            WHERE id = $1`,
           [prescription_id],
         );
 
-    if (prescriptionResult.rows.length === 0) {
-      throw new NotFoundException(
-        'Prescription not found',
-      );
-    }
+        if (prescriptionResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Prescription not found',
+          );
+        }
 
-    if (prescriptionResult.rows[0].status === 'COMPLETED') {
-      throw new BadRequestException(
-        'Cannot add items to a completed prescription',
-      );
-    }
+        if (prescriptionResult.rows[0].status === 'COMPLETED') {
+          throw new BadRequestException(
+            'Cannot add items to a completed prescription',
+          );
+        }
 
-    const medicineResult =
-      await this.databaseService
-        .getPool()
-        .query(
+        const medicineResult = await client.query(
           `SELECT id
            FROM medicines
            WHERE id = $1`,
           [medicine_id],
         );
 
-    if (medicineResult.rows.length === 0) {
-      throw new NotFoundException(
-        'Medicine not found',
-      );
-    }
+        if (medicineResult.rows.length === 0) {
+          throw new NotFoundException(
+            'Medicine not found',
+          );
+        }
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO prescription_items
-         (
-           prescription_id,
-           medicine_id,
-           dosage,
-           frequency,
-           duration,
-           quantity,
-           instructions
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING
-           id,
-           prescription_id,
-           medicine_id,
-           dosage,
-           frequency,
-           duration,
-           quantity,
-           instructions,
-           created_at`,
-        [
-          prescription_id,
-          medicine_id,
-          dosage,
-          frequency,
-          duration,
-          quantity,
-          instructions,
-        ],
-      );
+        const result = await client.query(
+          `INSERT INTO prescription_items
+           (
+             prescription_id,
+             medicine_id,
+             dosage,
+             frequency,
+             duration,
+             quantity,
+             instructions
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING
+             id,
+             prescription_id,
+             medicine_id,
+             dosage,
+             frequency,
+             duration,
+             quantity,
+             instructions,
+             created_at`,
+          [
+            prescription_id,
+            medicine_id,
+            dosage,
+            frequency,
+            duration,
+            quantity,
+            instructions,
+          ],
+        );
 
-    const createdItem = result.rows[0];
+        const createdItem = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'CREATE',
-      'PRESCRIPTION_ITEMS',
-      createdItem.id,
-      `Created prescription item: ${createdItem.id} for prescription: ${prescription_id}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'PRESCRIPTION_ITEMS',
+          createdItem.id,
+          `Created prescription item: ${createdItem.id} for prescription: ${prescription_id}`,
+          client,
+        );
+
+        return createdItem;
+      },
     );
-
-    return createdItem;
   }
 }

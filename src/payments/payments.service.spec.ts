@@ -4,38 +4,34 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { createDatabaseServiceMock } from '../../test/support/database-service.mock';
+import type { DatabaseServiceMock } from '../../test/support/database-service.mock';
+
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { DatabaseService } from '../database/database.service';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
-  let clientQuery: jest.Mock;
-  let clientRelease: jest.Mock;
+  let database: DatabaseServiceMock;
+  let queryMock: jest.Mock;
   let auditMock: jest.Mock;
 
   beforeEach(async () => {
-    clientQuery = jest.fn();
-    clientRelease = jest.fn();
+    queryMock = jest.fn();
+    auditMock = jest.fn();
+    database = createDatabaseServiceMock(queryMock);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentsService,
         {
           provide: DatabaseService,
-          useValue: {
-            getPool: () => ({
-              query: jest.fn(),
-              connect: async () => ({
-                query: clientQuery,
-                release: clientRelease,
-              }),
-            }),
-          },
+          useValue: database.provider,
         },
         {
           provide: AuditLogsService,
-          useValue: { createAuditLog: auditMock = jest.fn() },
+          useValue: { createAuditLog: auditMock },
         },
       ],
     }).compile();
@@ -49,11 +45,7 @@ describe('PaymentsService', () => {
     status?: string;
     inserted?: Record<string, unknown>;
   }) {
-    clientQuery.mockImplementation((sql: string) => {
-      if (sql === 'BEGIN' || sql === 'COMMIT') {
-        return Promise.resolve({});
-      }
-
+    queryMock.mockImplementation((sql: string) => {
       if (sql.includes('FROM sales')) {
         return Promise.resolve({
           rows: [
@@ -99,8 +91,92 @@ describe('PaymentsService', () => {
     );
 
     expect(result.id).toBe(7);
-    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(database.transaction).toHaveBeenCalledWith('COMMIT');
     expect(auditMock).toHaveBeenCalled();
+  });
+
+  it('writes the audit log inside the payment transaction', async () => {
+    mockSaleFlow({
+      total: 100,
+      paid: 60,
+      inserted: { id: 7, sale_id: 1, amount: 40 },
+    });
+
+    await service.createPayment(
+      { sale_id: 1, amount: 40, payment_method: 'CASH' },
+      9,
+    );
+
+    expect(auditMock).toHaveBeenCalledWith(
+      9,
+      'CREATE',
+      'PAYMENTS',
+      7,
+      expect.stringContaining('payment: 7'),
+      database.client,
+    );
+  });
+
+  it('rolls back the payment when the audit log cannot be written', async () => {
+    mockSaleFlow({
+      total: 100,
+      paid: 60,
+      inserted: { id: 7, sale_id: 1, amount: 40 },
+    });
+
+    auditMock.mockRejectedValueOnce(new Error('audit unavailable'));
+
+    await expect(
+      service.createPayment(
+        { sale_id: 1, amount: 40, payment_method: 'CASH' },
+        9,
+      ),
+    ).rejects.toThrow('audit unavailable');
+
+    expect(database.transaction).toHaveBeenCalledWith('ROLLBACK');
+    expect(database.transaction).not.toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('does not open its own transaction when a client is supplied', async () => {
+    const externalClient = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        if (sql.includes('FROM sales')) {
+          return Promise.resolve({
+            rows: [
+              { id: 1, total_amount: 100, status: 'PENDING' },
+            ],
+          });
+        }
+
+        if (sql.includes('SUM(amount)')) {
+          return Promise.resolve({
+            rows: [{ paid_amount: 0 }],
+          });
+        }
+
+        return Promise.resolve({
+          rows: [{ id: 11, sale_id: 1 }],
+        });
+      }),
+      release: jest.fn(),
+    };
+
+    const result = await service.createPayment(
+      { sale_id: 1, amount: 40, payment_method: 'CASH' },
+      9,
+      externalClient as never,
+    );
+
+    expect(result.id).toBe(11);
+    expect(database.transaction).not.toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledWith(
+      9,
+      'CREATE',
+      'PAYMENTS',
+      11,
+      expect.any(String),
+      externalClient,
+    );
   });
 
   it('rejects overpayment beyond the remaining balance', async () => {
@@ -113,7 +189,7 @@ describe('PaymentsService', () => {
       ),
     ).rejects.toThrow(BadRequestException);
 
-    expect(clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(database.transaction).toHaveBeenCalledWith('ROLLBACK');
   });
 
   it('rejects payment for a cancelled sale', async () => {
@@ -133,11 +209,7 @@ describe('PaymentsService', () => {
   });
 
   it('rejects payment for a missing sale', async () => {
-    clientQuery.mockImplementation((sql: string) => {
-      if (sql === 'BEGIN' || sql === 'ROLLBACK') {
-        return Promise.resolve({});
-      }
-
+    queryMock.mockImplementation((sql: string) => {
       if (sql.includes('FROM sales')) {
         return Promise.resolve({ rows: [] });
       }

@@ -52,30 +52,33 @@ export class CategoriesService {
       description,
     } = createCategoryDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `INSERT INTO medicine_categories
-         (name, description)
-         VALUES ($1, $2)
-         RETURNING *`,
-        [
-          name,
-          description ?? null,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `INSERT INTO medicine_categories
+           (name, description)
+           VALUES ($1, $2)
+           RETURNING *`,
+          [
+            name,
+            description ?? null,
+          ],
+        );
 
-    const createdCategory = result.rows[0];
+        const createdCategory = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'CREATE',
-      'MEDICINE_CATEGORIES',
-      createdCategory.id,
-      `Created medicine category: ${createdCategory.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'CREATE',
+          'MEDICINE_CATEGORIES',
+          createdCategory.id,
+          `Created medicine category: ${createdCategory.name}`,
+          client,
+        );
+
+        return createdCategory;
+      },
     );
-
-    return createdCategory;
   }
 
   async updateCategory(
@@ -88,72 +91,78 @@ export class CategoriesService {
       description,
     } = updateCategoryDto;
 
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        `UPDATE medicine_categories
-         SET
-           name = COALESCE($1, name),
-           description = COALESCE($2, description),
-           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $3
-         RETURNING *`,
-        [
-          name ?? null,
-          description ?? null,
-          id,
-        ],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          `UPDATE medicine_categories
+           SET
+             name = COALESCE($1, name),
+             description = COALESCE($2, description),
+             updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3
+           RETURNING *`,
+          [
+            name ?? null,
+            description ?? null,
+            id,
+          ],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Category not found',
-      );
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException(
+            'Category not found',
+          );
+        }
 
-    const updatedCategory = result.rows[0];
+        const updatedCategory = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'UPDATE',
-      'MEDICINE_CATEGORIES',
-      updatedCategory.id,
-      `Updated medicine category: ${updatedCategory.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'UPDATE',
+          'MEDICINE_CATEGORIES',
+          updatedCategory.id,
+          `Updated medicine category: ${updatedCategory.name}`,
+          client,
+        );
+
+        return updatedCategory;
+      },
     );
-
-    return updatedCategory;
   }
 
   async deleteCategory(
     id: number,
     actorUserId: number,
   ) {
-    const result = await this.databaseService
-      .getPool()
-      .query(
-        'DELETE FROM medicine_categories WHERE id = $1 RETURNING *',
-        [id],
-      );
+    return this.databaseService.runInTransaction(
+      async (client) => {
+        const result = await client.query(
+          'DELETE FROM medicine_categories WHERE id = $1 RETURNING *',
+          [id],
+        );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException(
-        'Category not found',
-      );
-    }
+        if (result.rows.length === 0) {
+          throw new NotFoundException(
+            'Category not found',
+          );
+        }
 
-    const deletedCategory = result.rows[0];
+        const deletedCategory = result.rows[0];
 
-    await this.auditLogsService.createAuditLog(
-      actorUserId,
-      'DELETE',
-      'MEDICINE_CATEGORIES',
-      deletedCategory.id,
-      `Deleted medicine category: ${deletedCategory.name}`,
+        await this.auditLogsService.createAuditLog(
+          actorUserId,
+          'DELETE',
+          'MEDICINE_CATEGORIES',
+          deletedCategory.id,
+          `Deleted medicine category: ${deletedCategory.name}`,
+          client,
+        );
+
+        return {
+          message: 'Category deleted successfully',
+          category: deletedCategory,
+        };
+      },
     );
-
-    return {
-      message: 'Category deleted successfully',
-      category: deletedCategory,
-    };
   }
 }
